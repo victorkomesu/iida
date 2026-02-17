@@ -1,0 +1,2397 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>IIDA - Central Unificada</title>
+
+    <!-- ============================================
+         📱 PWA — CONFIGURAÇÕES DO APP INSTALÁVEL
+         ============================================ -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1d4ed8">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="IIDA">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <!-- ============================================ -->
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --secondary: #64748b;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --info: #0ea5e9;
+            --bg-body: #f8fafc;
+            --bg-card: #ffffff;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --radius: 12px;
+            --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
+        body { background: var(--bg-body); color: var(--text-main); min-height: 100vh; line-height: 1.5; }
+
+        /* BOTÕES DE HORA */
+        .time-shortcuts { display: flex; gap: 5px; overflow-x: auto; padding-bottom: 5px; margin-bottom: 5px; scrollbar-width: none; }
+        .time-shortcuts::-webkit-scrollbar { display: none; }
+        .time-chip { background: #e2e8f0; color: #475569; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap; border: 1px solid #cbd5e1; transition: background 0.15s; }
+        .time-chip:active { background: #2563eb; color: white; border-color: #2563eb; }
+
+        /* LOADING */
+        #loading { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.9); z-index: 10000; display: none; flex-direction: column; justify-content: center; align-items: center; backdrop-filter: blur(4px); }
+        .spinner { width: 48px; height: 48px; border: 4px solid var(--border); border-top: 4px solid var(--primary); border-radius: 50%; animation: spin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* OFFLINE */
+        #offlineBanner { display: none; background: var(--danger); color: white; text-align: center; padding: 12px; font-weight: 600; font-size: 14px; position: fixed; top: 0; left: 0; width: 100%; z-index: 99999; box-shadow: var(--shadow); }
+
+        /* BARRA DE STATUS DO GOOGLE */
+        #googleStatus { position: fixed; top: 0; left: 0; width: 100%; z-index: 99998; padding: 6px 16px; font-size: 12px; font-weight: 700; display: none; align-items: center; justify-content: space-between; transition: all 0.3s; gap: 10px; }
+        #googleStatus.ok      { background: #065f46; color: #d1fae5; display: flex; }
+        #googleStatus.warning { background: #92400e; color: #fef3c7; display: flex; }
+        #googleStatus.error   { background: #7f1d1d; color: #fecaca; display: flex; }
+        .gs-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; animation: pulse 2s infinite; }
+        .gs-dot.ok      { background: #34d399; }
+        .gs-dot.warning { background: #fbbf24; }
+        .gs-dot.error   { background: #f87171; }
+        #gsStatusText { flex: 1; }
+        #gsBtnReenviar { background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; display: none; white-space: nowrap; }
+
+        /* FILA DE ENVIO PENDENTE */
+        #filaBanner { display: none; background: #1e3a5f; color: #bfdbfe; padding: 8px 16px; font-size: 12px; font-weight: 700; text-align: center; }
+        #filaBanner span { color: #fbbf24; }
+
+        /* ALERTA DE PRAZO */
+        #alertaPrazo { display: none; background: #7f1d1d; color: #fecaca; padding: 10px 16px; font-size: 13px; font-weight: 700; text-align: center; }
+
+        /* TOASTS */
+        #toastContainer { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%); z-index: 99997; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+        .toast { padding: 12px 20px; border-radius: 12px; font-size: 13px; font-weight: 700; color: white; box-shadow: var(--shadow-lg); pointer-events: all; animation: toastIn 0.3s ease; max-width: 320px; text-align: center; }
+        .toast.success { background: #065f46; }
+        .toast.error   { background: #7f1d1d; }
+        .toast.warning { background: #78350f; }
+        .toast.info    { background: #1e3a5f; }
+        @keyframes toastIn { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+
+        /* BACKUP */
+        .backup-item { background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+        .btn-baixar { background: #eff6ff; color: var(--primary); border: 1px solid #dbeafe; border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 11px; font-weight: 700; }
+        .fila-badge { background: #fbbf24; color: #1c1917; padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 800; margin-left: 4px; display: none; }
+
+        /* PWA — BANNER DE INSTALAÇÃO */
+        #pwaInstallBanner {
+            display: none; background: linear-gradient(135deg, #1e3a5f, #1d4ed8);
+            color: white; padding: 14px 20px;
+            align-items: center; justify-content: space-between; gap: 12px;
+            border-bottom: 1px solid #2563eb;
+        }
+        #pwaInstallBanner.show { display: flex; }
+        .pwa-banner-text { flex: 1; }
+        .pwa-banner-text strong { display: block; font-size: 14px; }
+        .pwa-banner-text small  { font-size: 11px; opacity: 0.8; }
+        .pwa-install-btn { background: white; color: #1d4ed8; border: none; padding: 10px 18px; border-radius: 10px; font-weight: 800; font-size: 13px; cursor: pointer; white-space: nowrap; }
+        .pwa-dismiss-btn { background: none; border: none; color: rgba(255,255,255,0.6); font-size: 20px; cursor: pointer; padding: 0 4px; }
+
+        /* LOGIN */
+        #loginScreen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: radial-gradient(circle at top left, #3b82f6, #1d4ed8); z-index: 9999; display: flex; justify-content: center; align-items: center; }
+        .login-box { background: white; padding: 40px; border-radius: 24px; width: 90%; max-width: 400px; text-align: center; box-shadow: var(--shadow-lg); }
+        .login-box h2 { font-weight: 800; letter-spacing: -0.025em; color: var(--primary-dark); }
+        .login-input { width: 100%; padding: 14px; border: 2px solid var(--border); border-radius: var(--radius); font-size: 16px; margin-bottom: 16px; outline: none; transition: all 0.2s; }
+        .login-input:focus { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1); }
+        .login-btn { width: 100%; padding: 16px; background: var(--primary); color: white; border: none; border-radius: var(--radius); font-weight: 700; font-size: 16px; cursor: pointer; transition: background 0.2s; }
+        .login-btn:hover { background: var(--primary-dark); }
+
+        /* APP */
+        #appContainer { display: none; max-width: 1000px; margin: 0 auto; background: var(--bg-body); min-height: 100vh; }
+
+        /* NOTIFICAÇÕES */
+        .notification-btn { position: relative; background: rgba(255,255,255,0.2); border: none; padding: 10px 14px; border-radius: 10px; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; }
+        .notification-badge { position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; font-size: 10px; font-weight: 800; width: 20px; height: 20px; border-radius: 50%; display: none; align-items: center; justify-content: center; border: 2px solid var(--primary-dark); }
+        @keyframes pulse { 0%,100%{transform:scale(1);} 50%{transform:scale(1.2);} }
+        .notif-item { background: #fff7ed; border-left: 4px solid #f97316; padding: 12px; margin-bottom: 10px; border-radius: 8px; font-size: 13px; color: #431407; display: flex; justify-content: space-between; align-items: center; }
+
+        /* HEADER */
+        .header { background: var(--primary-dark); padding: 24px 20px; color: white; border-radius: 0 0 24px 24px; box-shadow: var(--shadow); }
+        .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .header-top h3 { font-size: 24px; font-weight: 800; letter-spacing: -0.025em; }
+        .header-buttons { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 8px; scrollbar-width: none; flex-wrap: wrap; }
+        .header-buttons::-webkit-scrollbar { display: none; }
+        .header-btn { border: none; padding: 10px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; color: white; white-space: nowrap; transition: transform 0.1s, opacity 0.2s; display: flex; align-items: center; gap: 6px; }
+        .header-btn:active { transform: scale(0.95); }
+        .header-btn:disabled { background: #94a3b8 !important; cursor: not-allowed; opacity: 0.7; }
+
+        /* TOOLBAR */
+        .toolbar { margin: 20px 15px; padding: 20px; background: white; border-radius: 16px; border: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 16px; box-shadow: var(--shadow); }
+        .tool-item { flex: 1; min-width: 180px; }
+        .tool-item label { font-size: 12px; font-weight: 700; display: block; margin-bottom: 6px; color: var(--secondary); text-transform: uppercase; }
+        .tool-item input, .tool-item select { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 15px; background: #f1f5f9; color: var(--text-main); font-weight: 500; outline: none; }
+        .tool-item input:focus, .tool-item select:focus { border-color: var(--primary); background: white; }
+
+        /* STATUS BAR */
+        #statusDiaBarra { display: none; padding: 14px; text-align: center; font-weight: 700; font-size: 14px; margin: 0 15px 20px; border-radius: 12px; border: 1px solid transparent; }
+        .status-pendente { background: #fff7ed; color: #9a3412; border-color: #ffedd5; }
+        .status-aprovado { background: #f0fdf4; color: #166534; border-color: #dcfce7; }
+        .status-bloqueado { background: #f8fafc; color: #475569; border-color: #e2e8f0; }
+
+        /* CARDS */
+        .content { padding: 0 15px 120px; }
+        .funcionario-card { background: white; border-radius: 16px; padding: 20px; margin-bottom: 20px; border: 1px solid var(--border); box-shadow: var(--shadow); transition: border-color 0.3s; }
+        .funcionario-card.falta { border-left: 6px solid var(--danger); }
+        .funcionario-card.atestado { border-left: 6px solid var(--warning); }
+        .funcionario-card.feriado { border-left: 6px solid #a855f7; }
+        .funcionario-card.trabalhou { border-left: 6px solid var(--success); }
+        .funcionario-card.ferias { border-left: 6px solid #64748b; }
+        .funcionario-card.afastado-vigente { border-left: 6px solid #64748b; background-color: #f1f5f9; opacity: 0.9; }
+
+        .atestado-vigente-info { background: #fff7ed; color: #c2410c; padding: 12px; border-radius: 10px; font-weight: 700; font-size: 13px; border: 1px solid #ffedd5; margin-bottom: 10px; display: flex; align-items: center; gap: 10px; }
+        .afastado-info { background: #e2e8f0; color: #475569; padding: 12px; border-radius: 10px; font-weight: 700; font-size: 13px; border: 1px solid #cbd5e1; margin-bottom: 10px; display: flex; align-items: center; gap: 10px; }
+
+        .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; }
+        .card-title { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; }
+        .gsb-badge { background: #eff6ff; color: var(--primary); padding: 4px 10px; border-radius: 8px; font-weight: 700; font-size: 12px; border: 1px solid #dbeafe; }
+
+        /* STATUS BUTTONS */
+        .status-buttons { display: flex; gap: 8px; margin-bottom: 15px; flex-wrap: wrap; }
+        .status-btn { flex: 1; padding: 10px; border: 1px solid var(--border); border-radius: 10px; font-size: 11px; font-weight: 700; background: white; cursor: pointer; color: var(--secondary); transition: all 0.2s; text-transform: uppercase; min-width: 60px; }
+        .status-btn.active.trabalhou { background: var(--success); color: white; border-color: var(--success); }
+        .status-btn.active.falta { background: var(--danger); color: white; border-color: var(--danger); }
+        .status-btn.active.atestado { background: var(--warning); color: white; border-color: var(--warning); }
+        .status-btn.active.feriado { background: #a855f7; color: white; border-color: #a855f7; }
+        .status-btn.active.ferias { background: #64748b; color: white; border-color: #475569; }
+
+        /* LANÇAMENTOS */
+        .lancamento-item { background: #f8fafc; border: 1px solid var(--border); border-radius: 12px; padding: 15px; margin-bottom: 12px; position: relative; }
+        .lancamento-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin-bottom: 12px; }
+        .lancamento-field label { font-size: 10px; font-weight: 700; color: var(--secondary); margin-bottom: 4px; display: block; }
+        .lancamento-field input, .lancamento-field select { width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+
+        .btn-remove { position: absolute; top: -10px; right: -10px; background: var(--danger); color: white; width: 26px; height: 26px; border-radius: 50%; border: 3px solid white; font-weight: bold; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: var(--shadow); }
+
+        .obs-field { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 10px; min-height: 60px; resize: vertical; font-size: 13px; background: white; margin-top: 10px; }
+        .meta-field { width: 100%; padding: 12px; border: 2px dashed var(--success); border-radius: 10px; font-size: 14px; margin-top: 10px; background: #f0fdf4; text-align: center; font-weight: 700; color: #166534; }
+        .total-horas { background: #eff6ff; color: var(--primary-dark); padding: 10px; border-radius: 10px; font-weight: 700; text-align: center; margin-top: 10px; font-size: 14px; border: 1px solid #dbeafe; }
+
+        .action-buttons { display: flex; gap: 10px; margin-top: 15px; }
+        .btn-add { background: #f0fdf4; color: #166534; flex: 1; border: 1px solid #dcfce7; padding: 12px; border-radius: 10px; font-weight: 700; cursor: pointer; }
+        .btn-copy { background: #eff6ff; color: var(--primary-dark); flex: 1; border: 1px solid #dbeafe; padding: 12px; border-radius: 10px; font-weight: 700; cursor: pointer; }
+
+        /* FOOTER */
+        .footer { position: fixed; bottom: 0; left: 0; width: 100%; background: white; padding: 16px 20px; display: flex; gap: 12px; border-top: 1px solid var(--border); z-index: 100; box-shadow: 0 -4px 15px rgba(0,0,0,0.05); }
+        .footer-btn { flex: 1; padding: 14px; border: none; border-radius: 12px; font-weight: 700; color: white; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
+
+        /* MODAL */
+        .modal { display: none; position: fixed; z-index: 9999; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.6); align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+        .modal.active { display: flex; }
+        .modal-box { background: white; padding: 30px; border-radius: 24px; width: 90%; max-width: 450px; max-height: 85vh; overflow-y: auto; box-shadow: var(--shadow-lg); }
+        .modal-box h3 { margin-bottom: 20px; font-weight: 800; color: var(--primary-dark); }
+        .modal-label { display: block; text-align: left; margin-bottom: 6px; font-weight: 700; color: var(--primary); font-size: 12px; text-transform: uppercase; }
+
+        /* FIX 3: btn-edit agora tem estilo */
+        .btn-edit { background: #eff6ff; color: var(--primary); border: 1px solid #dbeafe; border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 11px; font-weight: 700; margin-right: 6px; }
+        .btn-delete { background: #fee2e2; color: var(--danger); border: none; border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 11px; font-weight: 700; }
+
+        .lista-gerenciar { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 16px; }
+        .item-gerenciar { display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid #f1f5f9; font-size: 13px; font-weight: 500; }
+        .modal-box .login-input { background: #f8fafc; margin-bottom: 12px; }
+
+        /* MODAL DE DIAS (FIX 11: substituiu o prompt()) */
+        #modalDias .modal-box { max-width: 340px; text-align: center; }
+        #modalDias h3 { font-size: 18px; }
+        #modalDias input[type=number] { width: 100%; padding: 16px; border: 2px solid var(--border); border-radius: 12px; font-size: 28px; font-weight: 800; text-align: center; outline: none; margin: 15px 0; }
+        #modalDias input[type=number]:focus { border-color: var(--primary); }
+        .dias-btns { display: flex; gap: 10px; margin-top: 5px; }
+
+        @media (max-width: 480px) {
+            .header-top h3 { font-size: 20px; }
+            .toolbar { flex-direction: column; }
+            .tool-item { width: 100%; }
+            .footer { padding: 12px; gap: 8px; }
+            .footer-btn { font-size: 11px; padding: 12px 8px; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="loading">
+    <div class="spinner"></div>
+    <p style="margin-top:20px; color:var(--primary-dark); font-weight:700; font-size:18px;">Sincronizando...</p>
+    <p style="color:var(--secondary); font-size:14px;">Aguarde um momento</p>
+</div>
+
+<div id="offlineBanner">📡 MODO OFFLINE — Sem conexão com a internet</div>
+
+<!-- 🛡️ ELEMENTOS DE PROTEÇÃO v57 -->
+<div id="googleStatus">
+    <div class="gs-dot ok" id="gsDot"></div>
+    <span id="gsStatusText">Verificando servidor...</span>
+    <button id="gsBtnReenviar" onclick="processarFilaManual()">↑ Reenviar Fila</button>
+</div>
+<div id="filaBanner">
+    📦 <span id="filaCount">0</span> envio(s) aguardando na fila — tentando reenviar automaticamente...
+</div>
+<div id="alertaPrazo">
+    ⚠️ ATENÇÃO: Já são <span id="horaAtual"></span>h e o apontamento de hoje ainda não foi enviado!
+</div>
+<div id="toastContainer"></div>
+
+<!-- 📱 PWA — BANNER DE INSTALAÇÃO -->
+<div id="pwaInstallBanner">
+    <div style="font-size:32px;">📱</div>
+    <div class="pwa-banner-text">
+        <strong>Instalar IIDA como App</strong>
+        <small>Acesse mais rápido, funciona offline, sem navegador</small>
+    </div>
+    <button class="pwa-install-btn" onclick="instalarPWA()">Instalar</button>
+    <button class="pwa-dismiss-btn" onclick="dispensarBannerPWA()" title="Fechar">×</button>
+</div>
+
+<div id="loginScreen">
+    <div class="login-box">
+        <div style="margin-bottom:16px;"><img src="data:image/png;base64,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" style="width:120px; height:auto;" alt="Grupo IIDA"></div>
+        <h2>IIDA CENTRAL</h2>
+        <p style="color:var(--secondary); margin-bottom:32px; font-weight:500;">Faça login para continuar</p>
+        <input type="text" id="userLogin" class="login-input" placeholder="Usuário">
+        <input type="password" id="passLogin" class="login-input" placeholder="Senha">
+        <button class="login-btn" onclick="fazerLogin()">ENTRAR NO SISTEMA</button>
+        <p style="margin-top:24px; font-size:12px; color:var(--text-muted); font-weight:600;">VERSÃO 58 • APP INSTALÁVEL (PWA)</p>
+    </div>
+</div>
+
+<div id="appContainer">
+    <div class="header">
+        <div class="header-top">
+            <h3 id="welcomeUser">IIDA</h3>
+            <button class="header-btn" style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.2);" onclick="fazerLogout()">Sair</button>
+        </div>
+        <!-- FIX 1: headerButtons agora é UM único div, sem duplicata -->
+        <div class="header-buttons" id="headerButtons">
+            <button id="btnNotif" class="notification-btn header-btn" style="display:none;" onclick="abrirNotificacoes()">
+                🔔 <span id="notifCount" class="notification-badge">0</span>
+            </button>
+            <button id="btnRelatorios" class="header-btn" style="background:var(--info);" onclick="abrirModalRelatorio()">📊 Central Relatórios</button>
+            <button id="btnEnviar" class="header-btn" style="background:var(--success);" onclick="enviarDados()">☁️ Enviar Dados <span class="fila-badge" id="filaBadge">0</span></button>
+            <button id="btnGerenciar" class="header-btn" style="background:var(--warning);" onclick="abrirModal()">➕ Gerenciar</button>
+            <button id="btnLimpar" class="header-btn" style="background:var(--danger);" onclick="limparDia()">🗑️ Limpar</button>
+            <button class="header-btn" style="background:var(--secondary);" onclick="carregarDados()">🔄 Recarregar</button>
+            <button class="header-btn" style="background:#334155;" onclick="abrirModalBackup()">💾 Backup</button>
+        </div>
+    </div>
+
+    <div class="toolbar">
+        <div class="tool-item">
+            <label>📅 Data do Apontamento</label>
+            <input type="date" id="dataApontamento" onchange="carregarDados()">
+        </div>
+        <div class="tool-item">
+            <label>👤 Selecionar Equipe</label>
+            <select id="filtroEquipe" onchange="verificarStatusEnvio()"></select>
+        </div>
+    </div>
+
+    <div id="statusDiaBarra"></div>
+
+    <div class="content">
+        <div id="listaPrincipal"></div>
+    </div>
+
+    <div class="footer" id="barraFooter">
+        <button class="footer-btn" style="background:#6d28d9" onclick="gerarRelatorio('portrait')">📄 Vertical</button>
+        <button class="footer-btn" style="background:#7c3aed" onclick="gerarRelatorio('landscape')">📄 Horizontal</button>
+        <button class="footer-btn" style="background:var(--success)" onclick="gerarExcel()">📊 Excel</button>
+    </div>
+</div>
+
+<!-- MODAL GESTÃO -->
+<div class="modal" id="modalCad">
+    <div class="modal-box">
+        <h3>Gestão de Equipe</h3>
+        <div style="background:#f1f5f9; padding:20px; border-radius:16px; margin-bottom:20px; border:1px solid var(--border);">
+            <label class="modal-label">Código GSB</label>
+            <input type="text" id="novoGSB" class="login-input" placeholder="Ex: 12345">
+            <label class="modal-label">Nome Completo</label>
+            <input type="text" id="novoNome" class="login-input" placeholder="Nome do funcionário">
+            <label class="modal-label">Encarregado Responsável</label>
+            <select id="novoEnc" class="login-input">
+                <option value="Andreone">Andreone</option>
+                <option value="Gilberto">Gilberto</option>
+                <option value="Marcos">Marcos</option>
+                <option value="Valdir">Valdir</option>
+                <option value="Welson">Welson</option>
+                <option value="Paulinho">Paulinho</option>
+            </select>
+            <label class="modal-label" style="color:var(--danger); margin-top:15px;">📅 Data de Desligamento (Opcional)</label>
+            <input type="date" id="novoDemissao" class="login-input" style="border:1px solid #fecaca; background:#fff1f2; color:#b91c1c; font-weight:bold;">
+            <small style="display:block; margin-bottom:15px; color:#64748b; font-size:11px;">Preencha esta data <b>apenas se for demitir</b> o funcionário.</small>
+            <div style="display:flex; gap:10px;">
+                <button class="login-btn" onclick="salvarNovoFunc()">SALVAR / ATUALIZAR</button>
+                <button class="login-btn" style="background:#94a3b8;" onclick="limparFormulario()">LIMPAR</button>
+            </div>
+        </div>
+        <!-- FIX 12: debounce no onkeyup -->
+        <input type="text" id="buscaFunc" class="login-input" placeholder="🔍 Buscar funcionário para editar..." onkeyup="debounceRenderListaGerenciar()">
+        <div class="lista-gerenciar" id="listaFuncs"></div>
+        <button class="login-btn" style="background:var(--secondary); margin-top:20px;" onclick="fecharModal()">FECHAR</button>
+    </div>
+</div>
+
+<!-- MODAL NOTIFICAÇÕES -->
+<div class="modal" id="modalNotificacoes">
+    <div class="modal-box">
+        <h3>🔔 Envios Pendentes</h3>
+        <p style="font-size:12px; color:#64748b; margin-bottom:15px;">Apontamentos enviados pelos encarregados que aguardam aprovação.</p>
+        <div id="listaNotificacoes"></div>
+        <button class="login-btn" style="background:var(--secondary); margin-top:20px;" onclick="document.getElementById('modalNotificacoes').classList.remove('active')">Fechar</button>
+    </div>
+</div>
+
+<!-- MODAL RELATÓRIOS -->
+<div class="modal" id="modalRelatorios">
+    <div class="modal-box">
+        <h3>📊 Central de Relatórios</h3>
+        <div style="display:flex; gap:10px;">
+            <div style="flex:1"><label class="modal-label">De:</label><input type="date" id="relDataInicio" class="login-input"></div>
+            <div style="flex:1"><label class="modal-label">Até:</label><input type="date" id="relDataFim" class="login-input"></div>
+        </div>
+        <button class="login-btn" style="background:#10b981; margin-top:10px; color:white;" onclick="gerarExcelPremio()">🏆 Excel Prêmio (Layout Mural)</button>
+        <button class="login-btn" style="background:#4b5563; margin-top:10px; color:white;" onclick="gerarExcelFechamentoPremio()">📊 Excel Fechamento Premiação</button>
+        <div style="background:#f0fdf4; padding:15px; border-radius:16px; margin:15px 0; border: 1px solid #dcfce7;">
+            <label class="modal-label" style="color:#166534;">🔻 Perda por FALTA (%):</label>
+            <input type="number" id="confFalta" class="login-input" value="10" style="padding:10px;">
+            <label class="modal-label" style="color:#166534; margin-top:10px;">🔻 Perda por ATESTADO (%):</label>
+            <input type="number" id="confAtest" class="login-input" value="5" style="padding:10px;">
+        </div>
+        <label class="modal-label">👤 Funcionário (Opcional):</label>
+        <select id="filtroFuncRel" class="login-input">
+            <option value="">-- Todos --</option>
+        </select>
+        <div style="display:flex; gap:10px; flex-direction:column; margin-top:10px;">
+            <button class="login-btn" style="background:var(--info)" onclick="gerarExtratoMensal('pdf')">📄 Extrato Detalhado (+ Metas)</button>
+            <div style="border-top:1px solid var(--border); margin:10px 0;"></div>
+            <button class="login-btn" style="background:#5E35B1" onclick="gerarEspelhoPonto('pdf')">📄 Espelho de Ponto (PDF)</button>
+            <button class="login-btn" style="background:var(--success)" onclick="gerarEspelhoPonto('excel')">📊 Espelho de Ponto (Excel)</button>
+            <button class="login-btn" style="background:var(--secondary); margin-top:10px;" onclick="document.getElementById('modalRelatorios').classList.remove('active')">Voltar</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL BACKUP -->
+<div class="modal" id="modalBackup">
+    <div class="modal-box">
+        <h3>💾 Central de Backup</h3>
+        <p style="font-size:12px; color:#64748b; margin-bottom:15px;">Snapshots salvos automaticamente a cada envio bem-sucedido. Seus dados nunca se perdem.</p>
+        <div id="listaBackups"></div>
+        <div style="border-top:1px solid var(--border); margin-top:15px; padding-top:15px;">
+            <button class="login-btn" style="background:#059669;" onclick="criarBackupManual()">📸 Criar Backup Agora</button>
+            <button class="login-btn" style="background:var(--secondary); margin-top:10px;" onclick="document.getElementById('modalBackup').classList.remove('active')">Fechar</button>
+        </div>
+    </div>
+</div>
+
+
+<div class="modal" id="modalDias">
+    <div class="modal-box">
+        <h3 id="modalDiasTitulo">📋 Afastamento</h3>
+        <p style="color:#64748b; font-size:13px;">Quantos dias de afastamento?</p>
+        <input type="number" id="inputDias" min="1" value="1">
+        <div class="dias-btns">
+            <button class="login-btn" style="background:#94a3b8; flex:1;" onclick="cancelarModalDias()">Cancelar</button>
+            <button class="login-btn" style="flex:1;" onclick="confirmarModalDias()">Confirmar</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// =============================================
+// CONFIGURAÇÕES
+// =============================================
+const URL_GOOGLE = "https://script.google.com/macros/s/AKfycbx-UO0pRaOYUejbR-_4afWpzxG4oIBc3VtUi5he_to7rYaUWH29TFmIcvHdn6yPuN8E-g/exec";
+
+const EQUIPES_LISTA = ["Andreone","Gilberto","Marcos","Evelino","Valdir","Welson","Paulinho"];
+const AREAS_MAP = {
+    "71":["Q1","Q2","Q3","Q4","Q5","Q6","Q7","Q8","Q9","SERV GERAIS"],
+    "101":["T1","T2","T3","T4","T5","T6","T7","T8","T9","T10","SERV GERAIS"],
+    "111":["G1","G2","G3","G4","G5","G6","G7","G8","G9","G10","SERV GERAIS"],
+    "141":["Q1","Q1L","Q2","Q2L","Q3","Q3L","Q4","Q5","Q6","SERV GERAIS"],
+    "321":["B1","B2","B3","B4","B5","B6","B7","B8","B9","PA1","PA2","PA3","PA4","PA5"]
+};
+const SERVICOS = [
+    "1 - Administrativo","2 - Abastecimento das Maquinas","3 - Abrir Buraco","4 - Adubação",
+    "5 - Alinhamento Mestre","6 - Almoxarifado","7 - Análise Folha/Solo","8 - Aplicando Dormex",
+    "9 - Apagando Fogo","10 - Aplicando Herbicida","11 - Arando","12 - Arejamento",
+    "13 - Aterramento","14 - Cantina","15 - Capina","16 - Carregamento",
+    "17 - Classificação","18 - Colheita","19 - Colocando Água p/ Burros","20 - Colocando Cerca",
+    "21 - Colocando Iluminação","22 - Colocando Postes","23 - Coloc. Sombrite Cabo Espera BNN",
+    "24 - Colocando Tela Pássaros","25 - Condução Família","26 - Condução de Enxerto",
+    "27 - Construção","28 - Contagem de Cacho","29 - Contagem de Estoque",
+    "30 - Controle Mal de Panamá","31 - Controle de Pragas","32 - Cursos Diversos",
+    "33 - Desbrota","34 - Descarregar Caminhão","35 - Abaixar Cacho","36 - Desfolha",
+    "37 - Despenca","38 - Desponte Ramo","39 - Destoca","40 - Devolução Emb. Vazia",
+    "41 - Eliminar Cacho","42 - Eliminar Cavalo","43 - Eliminar Ombro","44 - Embalamento",
+    "45 - Emb. BNN Solta/Madura","46 - Encarregado","47 - Ensacamento Cacho","48 - Enxertando",
+    "50 - Erradicação","51 - Escoramento","52 - Esgotando Fossa/cx","53 - Estrutura",
+    "54 - Exame Lab/Clínico","55 - Formação Pescoço","56 - Gradeando","57 - Grampo",
+    "58 - Irrigação","59 - Limpeza Tronco","60 - Limpeza Barracão","61 - Manutenção Cabo Aéreo",
+    "62 - Manutenção Carretilha","63 - Manutenção Elétrica","64 - Manutenção Estrada",
+    "65 - Manutenção Irrigação","66 - Manutenção Trator","67 - Misturando Adubo",
+    "68 - Monitoramento","69 - Montando Irrigação","70 - Parição","71 - Plantio",
+    "72 - Poda","73 - Poda Drastica","74 - Pulverização","75 - Puxando Muda",
+    "76 - Puxando Poste","77 - Quebrando Adubo","78 - Raleio","79 - Reunião",
+    "80 - Roçada","81 - Seleção","82 - Separando Emb. Agrotóxico","83 - Serviços com Moto Serra",
+    "84 - Terceiros","85 - Tirando Muda","86 - Tirando Pastilho/Engaço","87 - Transporte Funcionário",
+    "88 - Transportando Sombrite","89 - Molhar Estrada","90 - Vendas","91 - Viveiro BNN",
+    "92 - Viveiro Uva","93 - Limpeza Refeitório/Banheiros","94 - Subsolagem","95 - Transporte Interno",
+    "96 - Corte Ponta - Formação Galho","97 - Viagem","98 - Limpeza Veículos","99 - Lavagem EPI",
+    "100 - Aplicando Tanex 1","101 - Aplicando Tanex 2","102 - Fusatsukuri","103 - Aplicando CPPU",
+    "104 - Limpeza Contentor","105 - Pinicado","106 - Polonização","107 - Marcação de Terra",
+    "108 - Aplicando Tanex 3","109 - Pintura","110 - Massagem Galho","111 - Medindo Brix",
+    "112 - Home Office","113 - Depreciação","114 - Aferição Tacógrafo","115 - Oficina"
+];
+
+const atalhosInicio = ["06:30","07:30","08:00","11:00","10:30"];
+const atalhosFim    = ["09:30","10:30","11:00","12:00","15:30","17:30","18:00","18:30"];
+const diasSemana    = ['DOM','SEG','TER','QUA','QUI','SEX','SAB'];
+
+// =============================================
+// ESTADO GLOBAL
+// =============================================
+let DB         = { logins:[], funcionarios:[], registros:[] };
+let sessao     = JSON.parse(localStorage.getItem('iida_sessao')) || null;
+let localData  = JSON.parse(localStorage.getItem('iida_local_final')) || {};
+let diaBloqueado = false;
+let isOffline    = false;
+
+// FIX 11: Estado do modal de dias
+let _pendingStatusGsb  = null;
+let _pendingStatusTipo = null;
+
+// =============================================
+// INICIALIZAÇÃO
+// =============================================
+window.onload = function() {
+    document.getElementById('dataApontamento').valueAsDate = new Date();
+    let hoje = new Date();
+    document.getElementById('relDataInicio').valueAsDate = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    document.getElementById('relDataFim').valueAsDate    = hoje;
+
+    updateOnlineStatus();
+    window.addEventListener('online',  updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+
+    if (sessao) entrarNoApp();
+    carregarDados();
+};
+
+function updateOnlineStatus() {
+    isOffline = !navigator.onLine;
+    document.getElementById('offlineBanner').style.display = isOffline ? 'block' : 'none';
+}
+
+// =============================================
+// DADOS
+// =============================================
+function carregarDados() {
+    document.getElementById('loading').style.display = 'flex';
+    if (navigator.onLine && URL_GOOGLE.includes("http")) {
+        fetch(URL_GOOGLE)
+            .then(res => {
+                // FIX 10: valida que a resposta é JSON válido
+                if (!res.ok) throw new Error("HTTP " + res.status);
+                return res.json();
+            })
+            .then(data => {
+                DB = data;
+                localStorage.setItem('iida_db_cache', JSON.stringify(DB));
+                document.getElementById('loading').style.display = 'none';
+                if (sessao) { verificarStatusEnvio(); atualizarNotificacoes(); }
+            })
+            .catch(e => { console.warn("Falha no fetch:", e); usarCache(); });
+    } else {
+        usarCache();
+    }
+}
+
+function usarCache() {
+    const cached = localStorage.getItem('iida_db_cache');
+    if (cached) { DB = JSON.parse(cached); }
+    isOffline = true;
+    document.getElementById('offlineBanner').style.display = 'block';
+    if (sessao) verificarStatusEnvio();
+    document.getElementById('loading').style.display = 'none';
+}
+
+// =============================================
+// FIX 5: LOGIN — sem senha hardcoded no frontend
+// A validação admin agora também passa pelo DB (planilha)
+// =============================================
+function fazerLogin() {
+    const u = document.getElementById('userLogin').value.trim().toLowerCase();
+    const p = document.getElementById('passLogin').value.trim();
+
+    if (!DB.logins || DB.logins.length === 0) {
+        alert("⚠️ Dados ainda não carregados. Verifique sua conexão e tente novamente.");
+        return;
+    }
+
+    const found = DB.logins.find(l =>
+        String(l.usuario).trim().toLowerCase() === u &&
+        String(l.senha).trim() === p
+    );
+
+    if (found) {
+        sessao = found;
+        localStorage.setItem('iida_sessao', JSON.stringify(sessao));
+        entrarNoApp();
+    } else {
+        alert("❌ Usuário ou senha incorretos.");
+    }
+}
+
+function entrarNoApp() {
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('appContainer').style.display = 'block';
+    document.getElementById('welcomeUser').innerText = "Olá, " + sessao.nome;
+    prepararFiltros();
+    verificarStatusEnvio();
+    iniciarSistemasDeProtecao(); // 🛡️ Liga todos os sistemas de proteção
+}
+
+function fazerLogout() {
+    localStorage.removeItem('iida_sessao');
+    location.reload();
+}
+
+// =============================================
+// FILTROS E PERMISSÕES
+// =============================================
+function prepararFiltros() {
+    const isRH = (sessao.cargo === 'rh' || sessao.cargo === 'admin');
+
+    document.getElementById('btnRelatorios').style.display = isRH ? 'block' : 'none';
+    document.getElementById('btnGerenciar').style.display  = isRH ? 'block' : 'none';
+    document.getElementById('btnEnviar').style.display     = 'block';
+    document.getElementById('btnLimpar').style.display     = 'block';
+
+    const btnNotif = document.getElementById('btnNotif');
+    if (btnNotif) btnNotif.style.display = isRH ? 'flex' : 'none';
+
+    const sel = document.getElementById('filtroEquipe');
+    sel.innerHTML = '<option value="">-- SELECIONE EQUIPE --</option>';
+    EQUIPES_LISTA.forEach(e => {
+        let selected = "";
+        if (!isRH) {
+            let nomeLogin = String(sessao.nome).toLowerCase().trim();
+            if (nomeLogin.includes(String(e).toLowerCase().trim())) selected = "selected";
+        }
+        sel.innerHTML += `<option value="${e}" ${selected}>${e}</option>`;
+    });
+    if (!isRH) sel.disabled = true;
+}
+
+function verificarStatusEnvio() {
+    const d   = document.getElementById('dataApontamento').value;
+    const enc = document.getElementById('filtroEquipe').value;
+
+    if (isOffline) {
+        diaBloqueado = false;
+        document.getElementById('statusDiaBarra').style.display = 'none';
+        const btn = document.getElementById('btnEnviar');
+        btn.disabled = false;
+        btn.innerHTML = "☁️ Enviar (Offline)";
+        btn.style.background = "#757575";
+        render();
+        return;
+    }
+
+    const registrosDia = DB.registros.filter(r => {
+        let dataReg = r.dataRef.split('T')[0];
+        return dataReg === d && r.encarregado.trim().toLowerCase().includes(enc.trim().toLowerCase());
+    });
+
+    const jaEnviado  = registrosDia.length > 0;
+    const aprovadoRH = registrosDia.some(r => r.validado === 'SIM');
+    const btn        = document.getElementById('btnEnviar');
+    const barraStatus = document.getElementById('statusDiaBarra');
+    const isRH       = (sessao.cargo === 'rh' || sessao.cargo === 'admin');
+
+    diaBloqueado = false;
+    btn.disabled = false;
+    barraStatus.style.display = 'none';
+
+    if (isRH) {
+        barraStatus.style.display = 'block';
+        if (jaEnviado && aprovadoRH) {
+            barraStatus.innerHTML   = "✅ DIA APROVADO";
+            barraStatus.className   = "status-aprovado";
+            btn.innerHTML           = "💾 Atualizar";
+            btn.style.background    = "#FF6F00";
+        } else if (jaEnviado) {
+            barraStatus.innerHTML   = "⚠️ PENDENTE";
+            barraStatus.className   = "status-pendente";
+            btn.innerHTML           = "💾 APROVAR DIA";
+            btn.style.background    = "#2E7D32";
+        } else {
+            barraStatus.innerHTML   = "⚪ Não lançado";
+            barraStatus.className   = "status-bloqueado";
+            btn.innerHTML           = "💾 Salvar";
+            btn.style.background    = "#FF6F00";
+        }
+    } else {
+        if (aprovadoRH) {
+            diaBloqueado = true;
+            barraStatus.style.display = 'block';
+            barraStatus.innerHTML     = "🔒 FINALIZADO PELO RH";
+            barraStatus.className     = "status-aprovado";
+            btn.innerHTML             = "🔒 Bloqueado";
+            btn.style.background      = "#555";
+            btn.disabled              = true;
+        } else if (jaEnviado) {
+            barraStatus.style.display = 'block';
+            barraStatus.innerHTML     = "⏳ Enviado";
+            barraStatus.className     = "status-pendente";
+            btn.innerHTML             = "📝 Re-Enviar";
+            btn.style.background      = "#455A64";
+        } else {
+            btn.innerHTML          = "☁️ Enviar";
+            btn.style.background   = "#2E7D32";
+        }
+    }
+    render();
+}
+
+// =============================================
+// NOTIFICAÇÕES
+// =============================================
+function atualizarNotificacoes() {
+    if (sessao.cargo !== 'rh' && sessao.cargo !== 'admin') return;
+    let pendentesMap = {};
+    DB.registros.forEach(r => {
+        if (r.validado !== 'SIM') {
+            let chave = `${r.encarregado}|${r.dataRef.split('T')[0]}`;
+            pendentesMap[chave] = true;
+        }
+    });
+    let total = Object.keys(pendentesMap).length;
+    const badge = document.getElementById('notifCount');
+    if (total > 0) {
+        badge.innerText = total;
+        badge.style.display = 'flex';
+        badge.style.animation = "pulse 2s infinite";
+    } else {
+        badge.style.display = 'none';
+    }
+}
+
+function abrirNotificacoes() {
+    const container = document.getElementById('listaNotificacoes');
+    container.innerHTML = "";
+    let lista = [];
+    DB.registros.forEach(r => {
+        if (r.validado !== 'SIM') {
+            let dataArr  = r.dataRef.split('T')[0].split('-');
+            let dataFmt  = `${dataArr[2]}/${dataArr[1]}`;
+            let chave    = `${r.encarregado}|${r.dataRef.split('T')[0]}|${dataFmt}`;
+            if (!lista.includes(chave)) lista.push(chave);
+        }
+    });
+    if (lista.length === 0) {
+        container.innerHTML = "<p style='text-align:center; color:#94a3b8;'>Tudo limpo! ✅<br>Nenhum apontamento pendente.</p>";
+    } else {
+        lista.sort().forEach(item => {
+            let [enc, dataIso, dataBonita] = item.split('|');
+            container.innerHTML += `
+            <div class="notif-item">
+                <div><strong>${enc}</strong> enviou dados<br><span style="font-size:11px; color:#666;">Referente a: ${dataBonita}</span></div>
+                <button onclick="irParaNotificacao('${enc}','${dataIso}')" style="background:#fff; border:1px solid #ddd; padding:5px 10px; border-radius:6px; cursor:pointer; font-size:11px; font-weight:bold; color:var(--primary);">Ver</button>
+            </div>`;
+        });
+    }
+    document.getElementById('modalNotificacoes').classList.add('active');
+}
+
+function irParaNotificacao(encarregado, dataIso) {
+    document.getElementById('modalNotificacoes').classList.remove('active');
+    document.getElementById('dataApontamento').value = dataIso;
+    document.getElementById('filtroEquipe').value    = encarregado;
+    carregarDados();
+    setTimeout(verificarStatusEnvio, 500);
+}
+
+// =============================================
+// AFASTAMENTOS — OTIMIZADO (FIX 4)
+// =============================================
+function criarMapaAfastamentos(dataAtualStr) {
+    const [y, m, d]  = dataAtualStr.split('-').map(Number);
+    const dataAtual  = new Date(y, m-1, d, 12, 0, 0);
+    let mapa = {};
+
+    DB.registros.forEach(r => {
+        let tipo = r.status.toUpperCase();
+        if (tipo !== 'ATESTADO' && tipo !== 'FERIAS') return;
+
+        const [ra, rm, rd] = r.dataRef.split('T')[0].split('-').map(Number);
+        const dataRegistro  = new Date(ra, rm-1, rd, 12, 0, 0);
+        if (dataRegistro >= dataAtual) return;
+
+        let dets = [];
+        try { dets = (typeof r.detalhes === 'string' ? JSON.parse(r.detalhes) : r.detalhes) || []; } catch(e){}
+        let dias = (dets.length > 0 && dets[0].diasAfastamento) ? parseInt(dets[0].diasAfastamento) : 1;
+
+        let dataFim = new Date(dataRegistro);
+        dataFim.setDate(dataRegistro.getDate() + (dias - 1));
+
+        if (dataAtual <= dataFim) {
+            let diffTempo  = Math.abs(dataAtual - dataRegistro);
+            let diaCorrente = Math.ceil(diffTempo / (1000 * 60 * 60 * 24)) + 1;
+            mapa[r.gsb] = {
+                tipo: tipo === 'FERIAS' ? 'FÉRIAS' : 'ATESTADO',
+                dataOrigem: r.dataRef.split('T')[0],
+                diasTotal: dias,
+                diaAtual: diaCorrente
+            };
+        }
+    });
+    return mapa;
+}
+
+// Mantida por compatibilidade com gerarEspelhoPonto
+function verificarAfastamentoVigente(gsb, dataAtualStr) {
+    const mapa = criarMapaAfastamentos(dataAtualStr);
+    return mapa[gsb] || null;
+}
+
+// =============================================
+// RENDER PRINCIPAL (OTIMIZADO)
+// =============================================
+function render() {
+    const dataStr   = document.getElementById('dataApontamento').value;
+    let filtroNome  = document.getElementById('filtroEquipe').value;
+    const container = document.getElementById('listaPrincipal');
+    container.innerHTML = "";
+
+    if (!filtroNome) {
+        container.innerHTML = "<p style='text-align:center; padding:40px; color:#94a3b8;'>Selecione uma equipe.</p>";
+        return;
+    }
+
+    // Dados da nuvem para o dia
+    let cloudData = {};
+    DB.registros
+        .filter(r => r.dataRef.split('T')[0] === dataStr)
+        .forEach(r => {
+            cloudData[r.gsb] = {
+                status:   r.status.toLowerCase(),
+                detalhes: (typeof r.detalhes === 'string' ? JSON.parse(r.detalhes) : r.detalhes) || [],
+                obs:      r.obs || ""
+            };
+        });
+
+    // FIX 4: mapa de afastamentos calculado UMA VEZ só
+    const mapaAfastamentos = criarMapaAfastamentos(dataStr);
+
+    const lista = DB.funcionarios.filter(f => {
+        const matchEquipe = f.encarregado.trim().toLowerCase().includes(filtroNome.trim().toLowerCase()) ||
+                            filtroNome.trim().toLowerCase().includes(f.encarregado.trim().toLowerCase());
+        if (!matchEquipe) return false;
+        if (f.demissao && dataStr > f.demissao) return false;
+        return true;
+    });
+
+    let htmlFinal = "";
+
+    lista.forEach((f, i) => {
+        // Afastamento vigente → card cinza simplificado
+        let afastamentoVigente = mapaAfastamentos[f.gsb];
+        if (afastamentoVigente) {
+            let dataFormatada = afastamentoVigente.dataOrigem.split('-').reverse().join('/');
+            let icone = afastamentoVigente.tipo === 'FÉRIAS' ? '🏖️' : '🏥';
+            htmlFinal += `
+                <div class="funcionario-card afastado-vigente">
+                    <div class="card-header">
+                        <div class="card-title" style="color:#64748b;"><b>${f.nome}</b></div>
+                        <span class="gsb-badge" style="background:#e2e8f0; color:#64748b;">GSB: ${f.gsb}</span>
+                    </div>
+                    <div class="afastado-info">
+                        ${icone} ${afastamentoVigente.tipo} VIGENTE (Dia ${afastamentoVigente.diaAtual} de ${afastamentoVigente.diasTotal})<br>
+                        Início em: ${dataFormatada}
+                    </div>
+                </div>`;
+            return;
+        }
+
+        // Renderização normal
+        const res = localData[f.gsb] || cloudData[f.gsb] || { status:'trabalhou', detalhes:[], obs:"" };
+        const st  = res.status;
+        const lcs = res.detalhes || [];
+        const obs = res.obs || "";
+        let htmlLancs = "";
+
+        if (st === 'trabalhou') {
+            if (lcs.length === 0) lcs.push({ lote:"", area:"", servico:"", inicio:"", fim:"" });
+
+            htmlLancs = lcs.map((l, idx) => {
+                let htmlShortcutsIni = (idx === 0)
+                    ? `<div class="time-shortcuts">${atalhosInicio.map(h => `<span class="time-chip" onclick="setTime('${f.gsb}',${idx},'inicio','${h}')">${h}</span>`).join('')}</div>`
+                    : `<div style="height:26px;"></div>`;
+
+                let propsIni = (idx === 0) ? "" : "readonly style='background:#e2e8f0; pointer-events:none;'";
+                let chipsFim = atalhosFim.filter(h => !l.inicio || h > l.inicio)
+                    .map(h => `<span class="time-chip" onclick="setTime('${f.gsb}',${idx},'fim','${h}')">${h}</span>`).join('');
+
+                return `<div class="lancamento-item">
+                    <button class="btn-remove" onclick="rmLanc('${f.gsb}',${idx})">×</button>
+                    <div class="lancamento-grid">
+                        <div class="lancamento-field"><label>LOTE</label><select onchange="updLanc('${f.gsb}',${idx},'lote',this.value)"><option value="">-</option>${Object.keys(AREAS_MAP).map(k=>`<option ${l.lote==k?'selected':''}>${k}</option>`).join('')}</select></div>
+                        <div class="lancamento-field"><label>ÁREA</label><select onchange="updLanc('${f.gsb}',${idx},'area',this.value)"><option value="">-</option>${(AREAS_MAP[l.lote]||[]).map(a=>`<option ${l.area==a?'selected':''}>${a}</option>`).join('')}</select></div>
+                        <div class="lancamento-field"><label>INÍCIO</label>${htmlShortcutsIni}<input type="time" id="ini_${f.gsb}_${idx}" value="${l.inicio}" ${propsIni} onchange="updLanc('${f.gsb}',${idx},'inicio',this.value)"></div>
+                        <div class="lancamento-field"><label>FIM</label><div class="time-shortcuts">${chipsFim}</div><input type="time" id="fim_${f.gsb}_${idx}" value="${l.fim}" onchange="updLanc('${f.gsb}',${idx},'fim',this.value)"></div>
+                        <div class="lancamento-field" style="grid-column:1/-1;"><label>SERVIÇO</label><input list="srvs" value="${l.servico}" onchange="updLanc('${f.gsb}',${idx},'servico',this.value)" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;"></div>
+                    </div>
+                </div>`;
+            }).join('');
+
+            htmlLancs += `<div class="total-horas">${calcH(lcs, dataStr)}</div>
+                          <div class="action-buttons">
+                            <button class="btn-add" onclick="addLanc('${f.gsb}')">+ Atividade</button>
+                            ${i > 0 ? `<button class="btn-copy" onclick="copiarAnt(${i})">⬇ Copiar Anterior</button>` : ''}
+                          </div>`;
+        } else {
+            let limite   = getLimiteMinutos(dataStr);
+            let debitoStr = "";
+            if (st === 'falta' && limite > 0) {
+                debitoStr = `<br>DÉBITO: -${Math.floor(limite/60)}h${(limite%60).toString().padStart(2,'0')}`;
+            }
+            if ((st === 'atestado' || st === 'ferias') && lcs.length > 0 && lcs[0].diasAfastamento) {
+                debitoStr = `<br><span style="font-size:12px; color:#64748b;">(Duração: ${lcs[0].diasAfastamento} dias)</span>`;
+            }
+            let corTexto = st === 'falta' ? '#dc2626' : 'var(--secondary)';
+            let corFundo = st === 'falta' ? '#fee2e2' : '#f1f5f9';
+            htmlLancs = `<div style="text-align:center; padding:15px; background:${corFundo}; border-radius:12px; font-weight:800; color:${corTexto}; border: 1px solid ${st==='falta'?'#fecaca':'transparent'}">STATUS: ${st.toUpperCase()}${debitoStr}</div>`;
+        }
+
+        htmlLancs += `<textarea class="obs-field" placeholder="Obs..." onchange="setObs('${f.gsb}', this.value)">${obs}</textarea>`;
+        if (st === 'trabalhou') {
+            htmlLancs += `<input type="number" class="meta-field" placeholder="🎯 Meta %" value="${(lcs[0]||{}).metaDia||''}" onchange="setMeta('${f.gsb}', this.value)">`;
+        }
+
+        htmlFinal += `<div class="funcionario-card ${st}">
+            <div class="card-header">
+                <div class="card-title"><b>${f.nome}</b></div>
+                <span class="gsb-badge">GSB: ${f.gsb}</span>
+            </div>
+            <div class="status-buttons">
+                <button class="status-btn trabalhou ${st=='trabalhou'?'active':''}" onclick="setSt('${f.gsb}','trabalhou')">Presente</button>
+                <button class="status-btn falta ${st=='falta'?'active':''}" onclick="setSt('${f.gsb}','falta')">Falta</button>
+                <button class="status-btn atestado ${st=='atestado'?'active':''}" onclick="setSt('${f.gsb}','atestado')">Atestado</button>
+                <button class="status-btn ferias ${st=='ferias'?'active':''}" onclick="setSt('${f.gsb}','ferias')">Férias</button>
+                <button class="status-btn feriado ${st=='feriado'?'active':''}" onclick="setSt('${f.gsb}','feriado')">Feriado</button>
+            </div>
+            ${htmlLancs}
+        </div>`;
+    });
+
+    container.innerHTML = htmlFinal;
+}
+
+// =============================================
+// FIX 11: MODAL DE DIAS (substitui prompt())
+// =============================================
+function setSt(g, s) {
+    if (diaBloqueado) return;
+    if (!localData[g]) localData[g] = { status: s, detalhes: [], obs: "" };
+
+    if (s === 'atestado' || s === 'ferias') {
+        _pendingStatusGsb  = g;
+        _pendingStatusTipo = s;
+        let titulo = s === 'ferias' ? '🏖️ Dias de Férias' : '🏥 Dias de Atestado';
+        document.getElementById('modalDiasTitulo').innerText = titulo;
+        document.getElementById('inputDias').value = '1';
+        document.getElementById('modalDias').classList.add('active');
+    } else {
+        if (s !== 'trabalhou') localData[g].detalhes = [];
+        localData[g].status = s;
+        render();
+        salvarL();
+    }
+}
+
+function confirmarModalDias() {
+    let dias = parseInt(document.getElementById('inputDias').value);
+    if (isNaN(dias) || dias < 1) dias = 1;
+    document.getElementById('modalDias').classList.remove('active');
+
+    if (_pendingStatusGsb) {
+        localData[_pendingStatusGsb].status   = _pendingStatusTipo;
+        localData[_pendingStatusGsb].detalhes = [{ diasAfastamento: dias }];
+        render();
+        salvarL();
+    }
+    _pendingStatusGsb = null; _pendingStatusTipo = null;
+}
+
+function cancelarModalDias() {
+    document.getElementById('modalDias').classList.remove('active');
+    _pendingStatusGsb = null; _pendingStatusTipo = null;
+}
+
+// =============================================
+// AÇÕES DOS CARDS
+// =============================================
+function setTime(gsb, idx, field, val) {
+    if (diaBloqueado) return;
+    const el = document.getElementById(field === 'inicio' ? `ini_${gsb}_${idx}` : `fim_${gsb}_${idx}`);
+    if (el) el.value = val;
+    updLanc(gsb, idx, field, val);
+}
+
+function getLimiteMinutos(dataStr) {
+    if (!dataStr) return 480;
+    const parts   = dataStr.split('-');
+    const dateObj = new Date(parts[0], parts[1]-1, parts[2]);
+    const diaSem  = dateObj.getDay();
+    if (diaSem === 6) return 240;
+    if (diaSem === 0) return 0;
+    return 480;
+}
+
+function addLanc(g) {
+    if (diaBloqueado) return;
+    if (!localData[g]) localData[g] = { status: 'trabalhou', detalhes: [], obs: "" };
+    const atividades = localData[g].detalhes;
+    let novoInicio = "";
+    if (atividades.length > 0) {
+        const ultima = atividades[atividades.length - 1];
+        if (ultima.fim) {
+            novoInicio = (ultima.fim === '11:00' || ultima.fim === '11:30') ? '12:00' : ultima.fim;
+        }
+    }
+    localData[g].detalhes.push({ lote:"", area:"", servico:"", inicio: novoInicio, fim:"" });
+    render();
+    salvarL();
+}
+
+function setObs(g, v) {
+    if (diaBloqueado) return;
+    if (!localData[g]) localData[g] = { status:'trabalhou', detalhes:[], obs:"" };
+    localData[g].obs = v;
+    salvarL();
+}
+
+function setMeta(g, v) {
+    if (diaBloqueado) return;
+    if (!localData[g]) localData[g] = { status:'trabalhou', detalhes:[{}], obs:"" };
+    if (localData[g].detalhes.length === 0) localData[g].detalhes.push({});
+    localData[g].detalhes[0].metaDia = v;
+    salvarL();
+}
+
+function updLanc(g, idx, c, v) {
+    if (diaBloqueado) return;
+
+    if (!localData[g]) {
+        const d    = document.getElementById('dataApontamento').value;
+        const cloud = DB.registros.find(r => r.gsb == g && r.dataRef.split('T')[0] == d);
+        if (cloud) {
+            localData[g] = {
+                status:   cloud.status.toLowerCase(),
+                detalhes: (typeof cloud.detalhes === 'string' ? JSON.parse(cloud.detalhes) : cloud.detalhes) || [],
+                obs:      cloud.obs || ""
+            };
+        } else {
+            localData[g] = { status:'trabalhou', detalhes:[], obs:"" };
+        }
+    }
+
+    if (!localData[g].detalhes[idx]) {
+        localData[g].detalhes[idx] = { lote:"", area:"", servico:"", inicio:"", fim:"" };
+    }
+
+    localData[g].detalhes[idx][c] = v;
+    if (c === 'lote') render();
+    salvarL();
+}
+
+function rmLanc(g, idx) {
+    if (diaBloqueado) return;
+    localData[g].detalhes.splice(idx, 1);
+    render();
+    salvarL();
+}
+
+function copiarAnt(idx) {
+    if (diaBloqueado) return;
+    const badges = document.querySelectorAll('.gsb-badge');
+    const gAtu   = badges[idx].innerText.replace('GSB: ','');
+    const gAnt   = badges[idx-1].innerText.replace('GSB: ','');
+    const dAnt   = localData[gAnt] || DB.registros.find(r => r.gsb == gAnt);
+    if (dAnt) {
+        localData[gAtu] = JSON.parse(JSON.stringify(dAnt));
+        if (typeof localData[gAtu].detalhes === 'string') localData[gAtu].detalhes = JSON.parse(localData[gAtu].detalhes);
+        localData[gAtu].status = 'trabalhou';
+        if (!localData[gAtu].obs) localData[gAtu].obs = "";
+        render();
+        salvarL();
+    }
+}
+
+function salvarL() { localStorage.setItem('iida_local_final', JSON.stringify(localData)); }
+
+function calcH(lcs, dataStr) {
+    let m = 0;
+    lcs.forEach(l => {
+        if (l.inicio && l.fim) {
+            const [hi,mi] = l.inicio.split(':').map(Number);
+            const [hf,mf] = l.fim.split(':').map(Number);
+            let d = (hf*60+mf)-(hi*60+mi);
+            if (hi < 12 && hf >= 12) d -= 60;
+            m += d;
+        }
+    });
+    let limite    = getLimiteMinutos(dataStr);
+    let totalStr  = `${Math.floor(m/60)}h${(m%60).toString().padStart(2,'0')}min`;
+    let htmlFinal = `<span style="font-weight:700;">Total Trabalhado: ${totalStr}</span>`;
+    if (m !== limite && limite > 0) {
+        let diff    = m - limite;
+        let sinal   = diff >= 0 ? "+" : "-";
+        let absDiff = Math.abs(diff);
+        let extraStr = `${sinal}${Math.floor(absDiff/60)}h${(absDiff%60).toString().padStart(2,'0')}`;
+        let cor      = diff >= 0 ? 'var(--success)' : 'var(--danger)';
+        htmlFinal   += `<span style="background:${cor}; color:white; padding:4px 10px; border-radius:8px; font-size:12px; margin-left:12px; font-weight:800;">SALDO: ${extraStr}</span>`;
+    }
+    return htmlFinal;
+}
+
+// =============================================
+// ENVIO DE DADOS
+// =============================================
+function enviarDados() {
+    if (isOffline) { alert("Você está offline! Os dados foram salvos localmente."); return; }
+    if (diaBloqueado) { alert("Este dia já foi finalizado e bloqueado pelo RH."); return; }
+
+    const d      = document.getElementById('dataApontamento').value;
+    const isRH   = (sessao.cargo === 'rh' || sessao.cargo === 'admin');
+    const filtroNome = document.getElementById('filtroEquipe').value;
+
+    const listaFuncionarios = DB.funcionarios.filter(f => {
+        let okEq = !filtroNome ||
+            f.encarregado.trim().toLowerCase().includes(filtroNome.trim().toLowerCase()) ||
+            filtroNome.trim().toLowerCase().includes(f.encarregado.trim().toLowerCase());
+        if (!okEq) return false;
+        if (f.demissao && d > f.demissao) return false;
+        return true;
+    });
+
+    let cloudDataMap = {};
+    DB.registros
+        .filter(r => r.dataRef.split('T')[0] === d)
+        .forEach(r => {
+            let det = [];
+            try { det = (typeof r.detalhes === 'string' ? JSON.parse(r.detalhes) : r.detalhes) || []; } catch(e){}
+            cloudDataMap[r.gsb] = { status: r.status, detalhes: det, obs: r.obs || "" };
+        });
+
+    let pendentes = [];
+    let p = [];
+
+    listaFuncionarios.forEach(f => {
+        let dadosLocais = localData[f.gsb];
+        let dadosNuvem  = cloudDataMap[f.gsb];
+        let dadosFinais = dadosLocais || dadosNuvem;
+
+        if (!dadosFinais) {
+            pendentes.push(f.nome);
+        } else {
+            // Proteção contra apagar dados do RH
+            if (isRH && dadosFinais.status.toUpperCase() === 'TRABALHOU' &&
+                (!dadosFinais.detalhes || dadosFinais.detalhes.length === 0) &&
+                dadosNuvem && dadosNuvem.detalhes && dadosNuvem.detalhes.length > 0) {
+                dadosFinais = dadosNuvem;
+            }
+            p.push({
+                dataRef:     d,
+                encarregado: f.encarregado,
+                gsb:         f.gsb,
+                nome:        f.nome,
+                status:      dadosFinais.status.toUpperCase(),
+                detalhes:    dadosFinais.detalhes || [],
+                obs:         dadosFinais.obs || "",
+                validado:    isRH ? 'SIM' : 'NAO'
+            });
+        }
+    });
+
+    if (pendentes.length > 0) {
+        let listaNomes = pendentes.slice(0, 5).map(n => "• " + n).join("\n");
+        if (pendentes.length > 5) listaNomes += `\n... e mais ${pendentes.length - 5}`;
+        if (!confirm(`⚠️ ${pendentes.length} funcionários sem lançamento:\n\n${listaNomes}\n\nEnviar incompleto mesmo assim?`)) return;
+    } else {
+        let msgConfirm = isRH
+            ? `Confirma a APROVAÇÃO da equipe ${filtroNome ? filtroNome.toUpperCase() : 'SELECIONADA'}?`
+            : "Confirmar envio dos dados?";
+        if (!confirm(msgConfirm)) return;
+    }
+
+    if (p.length === 0 && pendentes.length === listaFuncionarios.length) {
+        alert("Nada para enviar.");
+        return;
+    }
+
+    document.getElementById('loading').style.display = 'flex';
+
+    fetch(URL_GOOGLE, {
+        method: "POST",
+        mode:   "no-cors",
+        body:   JSON.stringify({ type:"APONTAMENTO", tipo:"APONTAMENTO", pacote: p })
+    })
+    .then(() => {
+        document.getElementById('loading').style.display = 'none';
+
+        // FIX 10: feedback de sucesso mais claro
+        alert(isRH ? "✅ Dados aprovados e enviados com sucesso!" : "✅ Dados enviados! Aguardando aprovação do RH.");
+
+        // Atualização otimista (sem precisar recarregar tudo)
+        p.forEach(novoReg => {
+            DB.registros = DB.registros.filter(r =>
+                !(r.gsb == novoReg.gsb && r.dataRef.split('T')[0] == novoReg.dataRef)
+            );
+            DB.registros.push(novoReg);
+        });
+
+        localData = {};
+        salvarL();
+        verificarStatusEnvio();
+        render();
+        atualizarNotificacoes();
+    })
+    .catch(err => {
+        document.getElementById('loading').style.display = 'none';
+        console.error(err);
+        // FIX 10: mensagem de erro mais útil
+        alert("❌ Erro ao enviar. Os dados foram salvos localmente.\n\nCausa provável: sem conexão com o servidor.\nTente novamente em alguns instantes.");
+    });
+}
+
+function limparDia() {
+    if (confirm("Deseja limpar todos os dados da tela atual? (Isso não apagará o que já foi enviado)")) {
+        localData = {};
+        salvarL();
+        render();
+    }
+}
+
+// =============================================
+// GERENCIAR FUNCIONÁRIOS
+// =============================================
+function abrirModal() { document.getElementById('modalCad').classList.add('active'); renderListaGerenciar(); }
+function fecharModal() { document.getElementById('modalCad').classList.remove('active'); }
+
+function abrirModalRelatorio() {
+    document.getElementById('modalRelatorios').classList.add('active');
+    const selFunc = document.getElementById('filtroFuncRel');
+    const filtroEquipe = document.getElementById('filtroEquipe').value;
+    selFunc.innerHTML = '<option value="">-- Todos os Funcionários --</option>';
+    const lista = DB.funcionarios
+        .filter(f => !filtroEquipe || f.encarregado.trim().toLowerCase().includes(filtroEquipe.trim().toLowerCase()))
+        .sort((a,b) => a.nome.localeCompare(b.nome));
+    lista.forEach(f => { selFunc.innerHTML += `<option value="${f.gsb}">${f.nome}</option>`; });
+}
+
+function salvarNovoFunc() {
+    if (!navigator.onLine) { alert("Sem internet."); return; }
+    const g = document.getElementById('novoGSB').value;
+    const n = document.getElementById('novoNome').value;
+    const e = document.getElementById('novoEnc').value;
+    const d = document.getElementById('novoDemissao').value;
+    if (!g || !n) { alert("Preencha GSB e Nome."); return; }
+    document.getElementById('loading').style.display = 'flex';
+    fetch(URL_GOOGLE, {
+        method:"POST", mode:"no-cors",
+        body: JSON.stringify({ tipo:"SALVAR_FUNCIONARIO", gsb:g, nome:n, encarregado:e, demissao:d })
+    }).then(() => {
+        alert("✅ Salvo com sucesso!");
+        limparFormulario();
+        carregarDados();
+        setTimeout(renderListaGerenciar, 2000);
+        document.getElementById('loading').style.display = 'none';
+    }).catch(() => {
+        document.getElementById('loading').style.display = 'none';
+        alert("❌ Erro ao salvar. Verifique sua conexão.");
+    });
+}
+
+function editarFunc(gsb) {
+    const f = DB.funcionarios.find(x => x.gsb == gsb);
+    if (f) {
+        document.getElementById('novoGSB').value     = f.gsb;
+        document.getElementById('novoNome').value    = f.nome;
+        document.getElementById('novoEnc').value     = f.encarregado;
+        document.getElementById('novoDemissao').value = f.demissao || "";
+    }
+}
+
+function limparFormulario() {
+    document.getElementById('novoGSB').value      = "";
+    document.getElementById('novoNome').value     = "";
+    document.getElementById('novoDemissao').value = "";
+}
+
+function deletarFunc(gsb) {
+    if (!navigator.onLine) { alert("Sem conexão com a internet."); return; }
+    if (!confirm("Tem certeza que deseja excluir este funcionário?")) return;
+    document.getElementById('loading').style.display = 'flex';
+    fetch(URL_GOOGLE, {
+        method:"POST", mode:"no-cors",
+        body: JSON.stringify({ tipo:"EXCLUIR_FUNCIONARIO", gsb: gsb })
+    }).then(() => {
+        alert("✅ Funcionário excluído!");
+        carregarDados();
+        setTimeout(renderListaGerenciar, 2000);
+        document.getElementById('loading').style.display = 'none';
+    }).catch(() => {
+        document.getElementById('loading').style.display = 'none';
+        alert("❌ Erro ao excluir.");
+    });
+}
+
+// FIX 12: Debounce na busca (não dispara a cada tecla)
+let _debounceTimer = null;
+function debounceRenderListaGerenciar() {
+    clearTimeout(_debounceTimer);
+    _debounceTimer = setTimeout(renderListaGerenciar, 300);
+}
+
+function renderListaGerenciar() {
+    const termo   = document.getElementById('buscaFunc').value.toLowerCase();
+    const listaDiv = document.getElementById('listaFuncs');
+    listaDiv.innerHTML = "";
+    const filtrados = DB.funcionarios
+        .filter(f => f.nome.toLowerCase().includes(termo) || String(f.gsb).includes(termo))
+        .sort((a,b) => a.nome.localeCompare(b.nome));
+    filtrados.forEach(f => {
+        let status = f.demissao
+            ? `<span style="color:red; font-size:10px; font-weight:bold;">(Desligado: ${f.demissao.split('-').reverse().join('/')})</span>`
+            : "";
+        listaDiv.innerHTML += `
+        <div class="item-gerenciar">
+            <div><b>${f.gsb}</b> - ${f.nome}<br><small style="color:var(--secondary)">${f.encarregado}</small> ${status}</div>
+            <div>
+                <button class="btn-edit" onclick="editarFunc('${f.gsb}')">✎ Editar</button>
+                <button class="btn-delete" onclick="deletarFunc('${f.gsb}')">Excluir</button>
+            </div>
+        </div>`;
+    });
+}
+
+// =============================================
+// UTILITÁRIOS PDF/EXCEL
+// =============================================
+const PDF_COMMON_CSS = `
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+    body { font-family: 'Inter', Arial, sans-serif; color: #1e293b; margin: 0; padding: 0; font-size: 10pt; }
+    .pdf-container { padding: 20px; }
+    .header-table { width: 100%; border-bottom: 2px solid #2563eb; margin-bottom: 20px; padding-bottom: 10px; }
+    .header-table td { border: none; padding: 0; }
+    .company-name { color: #1d4ed8; font-size: 18pt; font-weight: bold; }
+    .report-title { font-size: 14pt; font-weight: bold; color: #64748b; text-align: right; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 15px; table-layout: fixed; }
+    th, td { border: 1px solid #e2e8f0; padding: 6px 8px; text-align: left; overflow: hidden; text-overflow: ellipsis; }
+    th { background-color: #f8fafc; color: #475569; font-weight: bold; font-size: 9pt; text-transform: uppercase; }
+    .status-badge { padding: 2px 6px; border-radius: 4px; font-size: 8pt; font-weight: bold; text-transform: uppercase; }
+    .status-trabalhou { background: #dcfce7; color: #166534; }
+    .status-falta { background: #fee2e2; color: #991b1b; }
+    .status-atestado { background: #fef3c7; color: #92400e; }
+    .status-feriado { background: #f3e8ff; color: #6b21a8; }
+    .meta-value { font-weight: bold; color: #10b981; }
+    .footer-summary { margin-top: 20px; page-break-inside: avoid; }
+    .summary-card { float: right; width: 300px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; }
+    .summary-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 9pt; }
+    .summary-total { border-top: 1px solid #cbd5e1; margin-top: 10px; padding-top: 10px; font-weight: bold; font-size: 11pt; color: #1d4ed8; }
+    .page-break { page-break-after: always; }
+    @page { margin: 1cm; }
+`;
+
+function getPdfHeader(title, subtitle) {
+    return `
+        <table class="header-table">
+            <tr>
+                <td><div class="company-name">GRUPO IIDA</div><div style="font-size: 9pt; color: #64748b;">${subtitle}</div></td>
+                <td style="text-align: right;"><div class="report-title">${title}</div><div style="font-size: 8pt; color: #94a3b8;">Gerado em: ${new Date().toLocaleString('pt-BR')}</div></td>
+            </tr>
+        </table>`;
+}
+
+function formatarSaldo(minutos) {
+    let sinal = minutos >= 0 ? "+" : "-";
+    let absM  = Math.abs(minutos);
+    return `${sinal}${Math.floor(absM/60)}h${(absM%60).toString().padStart(2,'0')}`;
+}
+
+function formatarSaldoSimples(minutos) {
+    if (minutos === 0) return "0:00";
+    let abs = Math.abs(minutos);
+    let h   = Math.floor(abs / 60);
+    let m   = (abs % 60).toString().padStart(2, '0');
+    return `${minutos < 0 ? '-' : '+'}${h}:${m}`;
+}
+
+// =============================================
+// ESPELHO DE PONTO
+// =============================================
+function gerarEspelhoPonto(tipo) {
+    const ini = document.getElementById('relDataInicio').value;
+    const fim = document.getElementById('relDataFim').value;
+    const filtroNome = document.getElementById('filtroEquipe').value;
+    const filtroFunc = document.getElementById('filtroFuncRel').value;
+
+    if (!ini || !fim) { alert("Selecione as datas de início e fim."); return; }
+
+    let dates = [];
+    let [y1,m1,d1] = ini.split('-').map(Number);
+    let [y2,m2,d2] = fim.split('-').map(Number);
+    let curr = new Date(y1, m1-1, d1);
+    let end  = new Date(y2, m2-1, d2);
+    while (curr <= end) { dates.push(new Date(curr)); curr.setDate(curr.getDate() + 1); }
+
+    let mapaRegistros = {};
+    DB.registros.forEach(r => {
+        let d = r.dataRef.split('T')[0];
+        if (d >= ini && d <= fim) mapaRegistros[d + '|' + r.gsb] = r;
+    });
+
+    let lista = DB.funcionarios.filter(f => {
+        const matchEquipe = !filtroNome || f.encarregado.trim().toLowerCase().includes(filtroNome.trim().toLowerCase());
+        const matchFunc   = !filtroFunc || f.gsb == filtroFunc;
+        if (f.demissao && f.demissao < ini) return false;
+        return matchEquipe && matchFunc;
+    }).sort((a, b) => a.nome.localeCompare(b.nome));
+
+    // FIX 4 aplicado: criarMapaAfastamentos por data de cada dia
+    let grid = [];
+    lista.forEach(f => {
+        let row = { nome: f.nome, dias: [], totalSaldo: 0 };
+        dates.forEach(dObj => {
+            let dStr = `${dObj.getFullYear()}-${(dObj.getMonth()+1).toString().padStart(2,'0')}-${dObj.getDate().toString().padStart(2,'0')}`;
+            let r    = mapaRegistros[dStr + '|' + f.gsb];
+
+            if (!r) {
+                let vig = verificarAfastamentoVigente(f.gsb, dStr);
+                if (vig) r = { status: vig.tipo === 'FÉRIAS' ? 'FERIAS' : 'ATESTADO', detalhes: [] };
+            }
+
+            let cell   = { text: "-", style: "" };
+            let diaSem = dObj.getDay();
+            let limite = (diaSem === 6) ? 240 : (diaSem === 0 ? 0 : 480);
+
+            if (r) {
+                let st = r.status.toUpperCase();
+                if (st === 'FALTA') {
+                    cell.text = "FALTA"; cell.style = "falta";
+                    if (limite > 0) row.totalSaldo -= limite;
+                } else if (st === 'ATESTADO') {
+                    cell.text = "ATEST."; cell.style = "atestado";
+                } else if (st === 'FERIAS' || st === 'FÉRIAS') {
+                    cell.text = "FÉRIAS"; cell.style = "atestado";
+                } else if (st === 'FERIADO') {
+                    cell.text = "FER."; cell.style = "feriado";
+                } else {
+                    let dets = [];
+                    try { dets = (typeof r.detalhes === 'string' ? JSON.parse(r.detalhes) : r.detalhes) || []; } catch(e){}
+                    let m = 0;
+                    dets.forEach(l => {
+                        if (l.inicio && l.fim) {
+                            const [hi,mi] = l.inicio.split(':').map(Number);
+                            const [hf,mf] = l.fim.split(':').map(Number);
+                            let dur = (hf*60+mf)-(hi*60+mi);
+                            if (hi<12 && hf>=12) dur -= 60;
+                            m += dur;
+                        }
+                    });
+                    let saldoDia = m - limite;
+                    row.totalSaldo += saldoDia;
+                    cell.text  = formatarSaldoSimples(saldoDia);
+                    cell.style = saldoDia < 0 ? "negativo" : (saldoDia > 0 ? "positivo" : "");
+                }
+            } else {
+                if (diaSem === 0) cell.style = "domingo";
+                else if (diaSem === 6) cell.style = "sabado_vazio";
+            }
+            row.dias.push(cell);
+        });
+        grid.push(row);
+    });
+
+    if (tipo === 'pdf') gerarPDFEspelho(grid, dates);
+    else gerarExcelEspelho(grid, dates);
+}
+
+function gerarPDFEspelho(grid, dates) {
+    const dIni = document.getElementById('relDataInicio').value.split('-').reverse().join('/');
+    const dFim = document.getElementById('relDataFim').value.split('-').reverse().join('/');
+
+    let h = `<html><head><meta charset="UTF-8"><style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+        body { font-family: 'Inter', Arial, sans-serif; color: #1e293b; margin: 0; padding: 0; font-size: 9pt; }
+        .pdf-container { padding: 20px; }
+        @page { size: A4 landscape; margin: 0.5cm; }
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        th, td { border: 1px solid #ccc; padding: 4px; text-align: center; font-size: 8pt; overflow:hidden; white-space:nowrap; }
+        th { background: #f1f5f9; color: #475569; font-weight: bold; }
+        .nome-col { text-align: left; width: 150px; font-weight: bold; background: #f8fafc; }
+        .falta { background: #fee2e2; color: #dc2626; font-weight: bold; }
+        .atestado { background: #fef3c7; color: #d97706; font-weight: bold; }
+        .feriado { background: #f3e8ff; color: #7e22ce; font-weight: bold; }
+        .negativo { color: #dc2626; }
+        .positivo { color: #16a34a; font-weight:bold; }
+        .domingo { background: #e2e8f0; }
+        .sabado_vazio { background: #f8fafc; }
+        .header-table { width: 100%; border:none; margin-bottom: 10px; }
+        .header-table td { border:none; text-align:left; }
+    </style></head><body onload="window.print()"><div class="pdf-container">`;
+
+    h += `<table class="header-table"><tr>
+        <td><div style="color:#2563eb; font-size:16pt; font-weight:bold;">GRUPO IIDA</div>
+            <div style="color:#64748b;">Espelho de Ponto — ${dIni} até ${dFim}</div></td>
+    </tr></table>`;
+
+    h += `<table><thead><tr><th rowspan="2" class="nome-col" style="text-align:center;">Funcionário</th>`;
+    dates.forEach(d => { h += `<th>${d.getDate()}</th>`; });
+    h += `<th rowspan="2" style="width:60px;">Saldo</th></tr><tr>`;
+    dates.forEach(d => { h += `<th style="font-size:7pt;">${diasSemana[d.getDay()]}</th>`; });
+    h += `</tr></thead><tbody>`;
+
+    grid.forEach(row => {
+        h += `<tr><td class="nome-col">${row.nome}</td>`;
+        row.dias.forEach(cell => {
+            let cls = cell.style ? `class="${cell.style}"` : "";
+            h += `<td ${cls}>${cell.text}</td>`;
+        });
+        let saldoStyle = row.totalSaldo < 0 ? "color:red; font-weight:bold;" : "color:green; font-weight:bold;";
+        h += `<td style="${saldoStyle}">${formatarSaldo(row.totalSaldo)}</td></tr>`;
+    });
+
+    h += `</tbody></table></div></body></html>`;
+    const win = window.open();
+    win.document.write(h);
+    win.document.close();
+}
+
+function gerarExcelEspelho(grid, dates) {
+    let csv = "FUNCIONARIO;";
+    dates.forEach(d => { csv += `${d.getDate().toString().padStart(2,'0')}-${diasSemana[d.getDay()]};`; });
+    csv += "SALDO_FINAL\n";
+    grid.forEach(row => {
+        csv += row.nome + ";";
+        row.dias.forEach(cell => { csv += cell.text + ";"; });
+        csv += formatarSaldo(row.totalSaldo) + "\n";
+    });
+    const blob = new Blob(["\ufeff"+csv], { type:'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = 'EspelhoPonto.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+// =============================================
+// EXTRATO MENSAL
+// =============================================
+function gerarExtratoMensal(tipo) {
+    const ini = document.getElementById('relDataInicio').value;
+    const fim = document.getElementById('relDataFim').value;
+    const dataTela   = document.getElementById('dataApontamento').value;
+    const filtroNome = document.getElementById('filtroEquipe').value;
+    const filtroFunc = document.getElementById('filtroFuncRel').value;
+    const descFalta  = parseFloat(document.getElementById('confFalta').value) || 0;
+    const descAtest  = parseFloat(document.getElementById('confAtest').value) || 0;
+
+    if (!ini || !fim) { alert("Selecione data inicio e fim"); return; }
+
+    const lista = DB.funcionarios.filter(f => {
+        const matchEquipe = !filtroNome || f.encarregado.trim().toLowerCase().includes(filtroNome.trim().toLowerCase());
+        const matchFunc   = !filtroFunc || f.gsb == filtroFunc;
+        if (f.demissao && f.demissao < ini) return false;
+        return matchEquipe && matchFunc;
+    });
+
+    let mapaRegistros = {};
+    DB.registros.forEach(r => {
+        let d = r.dataRef.split('T')[0];
+        if (d >= ini && d <= fim) {
+            if (d === dataTela && localData[r.gsb]) return;
+            if (!mapaRegistros[r.gsb]) mapaRegistros[r.gsb] = [];
+            mapaRegistros[r.gsb].push(r);
+        }
+    });
+
+    if (dataTela >= ini && dataTela <= fim) {
+        lista.forEach(f => {
+            if (localData[f.gsb]) {
+                if (!mapaRegistros[f.gsb]) mapaRegistros[f.gsb] = [];
+                mapaRegistros[f.gsb].push({
+                    dataRef: dataTela, gsb: f.gsb,
+                    status: localData[f.gsb].status,
+                    detalhes: localData[f.gsb].detalhes,
+                    obs: localData[f.gsb].obs || "", validado: "LOCAL"
+                });
+            }
+        });
+    }
+
+    let h = `<html><head><meta charset="UTF-8"><style>${PDF_COMMON_CSS}</style></head><body onload="window.print()"><div class="pdf-container">`;
+    let temDados = false;
+
+    lista.forEach((f, index) => {
+        let regs = (mapaRegistros[f.gsb] || []).sort((a,b) => a.dataRef.localeCompare(b.dataRef));
+        if (regs.length === 0) return;
+
+        temDados = true;
+        if (index > 0) h += `<div class="page-break"></div>`;
+
+        h += getPdfHeader("EXTRATO DETALHADO DE PRODUÇÃO", `Funcionário: ${f.nome} (GSB: ${f.gsb}) | Equipe: ${f.encarregado}`);
+        h += `<div style="margin-bottom:10px; font-weight:bold; color:#475569;">Período: ${ini.split('-').reverse().join('/')} até ${fim.split('-').reverse().join('/')}</div>`;
+        h += `<table><thead><tr>
+            <th style="width:80px;">Data</th><th style="width:50px;">Dia</th>
+            <th>Lote/Área</th><th>Serviço</th>
+            <th style="width:60px;">Início</th><th style="width:60px;">Fim</th>
+            <th style="width:60px;">H.Trab</th><th style="width:60px;">Meta %</th>
+        </tr></thead><tbody>`;
+
+        let totalMinutos=0, sumMeta=0, countDiasTrab=0, countFalta=0, countAtestado=0;
+
+        regs.forEach(r => {
+            let [ano,mes,dia] = r.dataRef.split('T')[0].split('-');
+            let dataFmt  = `${dia}/${mes}/${ano}`;
+            let dateObj  = new Date(ano, mes-1, dia);
+            let diaSem   = diasSemana[dateObj.getDay()];
+            let st       = (r.status || 'TRABALHOU').toUpperCase();
+
+            if (st === 'TRABALHOU' || st === 'PRESENTE') {
+                let dets   = (typeof r.detalhes === 'string' ? JSON.parse(r.detalhes) : r.detalhes) || [];
+                let metaVal = (dets.length > 0 && dets[0].metaDia) ? parseFloat(dets[0].metaDia) : 0;
+                sumMeta += metaVal; countDiasTrab++;
+                let metaDia = metaVal > 0 ? `<span class="meta-value">${metaVal}%</span>` : "-";
+
+                if (dets.length === 0) {
+                    h += `<tr><td>${dataFmt}</td><td>${diaSem}</td><td colspan="4" style="color:#94a3b8; font-style:italic;">Presente (Sem atividades lançadas)</td><td>-</td><td>${metaDia}</td></tr>`;
+                } else {
+                    dets.forEach((l, lIdx) => {
+                        let durStr = "-";
+                        if (l.inicio && l.fim) {
+                            const [hi,mi] = l.inicio.split(':').map(Number);
+                            const [hf,mf] = l.fim.split(':').map(Number);
+                            let dur = (hf*60+mf)-(hi*60+mi);
+                            if (hi<12 && hf>=12) dur -= 60;
+                            totalMinutos += dur;
+                            durStr = `${Math.floor(dur/60)}h${(dur%60).toString().padStart(2,'0')}`;
+                        }
+                        h += `<tr>
+                            <td>${lIdx===0?dataFmt:""}</td><td>${lIdx===0?diaSem:""}</td>
+                            <td>${l.lote||"-"}${l.area?' / '+l.area:""}</td>
+                            <td>${l.servico||"-"}</td><td>${l.inicio||"-"}</td><td>${l.fim||"-"}</td>
+                            <td>${durStr}</td><td>${lIdx===0?metaDia:""}</td>
+                        </tr>`;
+                    });
+                }
+            } else {
+                if (st === 'FALTA') countFalta++;
+                if (st === 'ATESTADO') countAtestado++;
+                let statusClass = st==='FALTA' ? 'status-falta' : (st==='ATESTADO' ? 'status-atestado' : 'status-feriado');
+                h += `<tr style="background:#f8fafc;">
+                    <td>${dataFmt}</td><td>${diaSem}</td>
+                    <td colspan="5" style="text-align:center;"><span class="status-badge ${statusClass}">${st}</span></td>
+                    <td>0%</td>
+                </tr>`;
+            }
+        });
+
+        let mediaMeta = countDiasTrab > 0 ? (sumMeta / countDiasTrab) : 0;
+        let descF     = countFalta * descFalta;
+        let descA     = countAtestado * descAtest;
+        let notaFinal = Math.max(0, mediaMeta - descF - descA);
+
+        h += `</tbody></table>
+        <div class="footer-summary">
+            <div class="summary-card">
+                <div style="font-weight:bold; margin-bottom:10px; color:#475569; border-bottom:1px solid #e2e8f0; padding-bottom:5px;">RESUMO DO PERÍODO</div>
+                <div class="summary-row"><span>Média Meta Diária:</span><span>${mediaMeta.toFixed(2)}%</span></div>
+                <div class="summary-row"><span>Desconto Faltas (${countFalta}):</span><span style="color:#ef4444;">-${descF.toFixed(2)}%</span></div>
+                <div class="summary-row"><span>Desconto Atestados (${countAtestado}):</span><span style="color:#f59e0b;">-${descA.toFixed(2)}%</span></div>
+                <div class="summary-row summary-total"><span>RESULTADO FINAL:</span><span>${notaFinal.toFixed(2)}%</span></div>
+            </div>
+            <div style="clear:both;"></div>
+        </div>`;
+    });
+
+    if (!temDados) { alert("Nenhum dado encontrado."); return; }
+    h += `</div></body></html>`;
+    const win = window.open(); win.document.write(h); win.document.close();
+}
+
+// =============================================
+// RELATÓRIO DIÁRIO (PDF)
+// =============================================
+function gerarRelatorio(orientacao) {
+    const data       = document.getElementById('dataApontamento').value;
+    const filtroNome = document.getElementById('filtroEquipe').value;
+
+    const lista = DB.funcionarios.filter(f => {
+        const match = !filtroNome || f.encarregado.trim().toLowerCase().includes(filtroNome.trim().toLowerCase());
+        if (f.demissao && data > f.demissao) return false;
+        return match;
+    });
+
+    // FIX 2: cloudData declarado corretamente dentro do escopo da função
+    let cloudData = {};
+    DB.registros
+        .filter(r => r.dataRef.split('T')[0] === data)
+        .forEach(r => {
+            cloudData[r.gsb] = {
+                status:   r.status.toLowerCase(),
+                detalhes: (typeof r.detalhes==='string' ? JSON.parse(r.detalhes) : r.detalhes) || [],
+                obs:      r.obs || ""
+            };
+        });
+
+    const [ano, mes, dia] = data.split('-');
+    const dataFmt    = `${dia}/${mes}/${ano}`;
+    const equipeTxt  = filtroNome ? `Equipe: ${filtroNome.toUpperCase()}` : 'Todas as Equipes';
+    let extraCss = orientacao === 'landscape'
+        ? `@page { size: A4 landscape; } .report-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }`
+        : `@page { size: A4 portrait; }  .report-grid { display: block; }`;
+
+    let h = `<html><head><meta charset="UTF-8"><style>${PDF_COMMON_CSS} ${extraCss}
+        .func-block { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 15px; break-inside: avoid; overflow: hidden; }
+        .func-header { background: #f1f5f9; padding: 8px 12px; display: flex; justify-content: space-between; font-weight: bold; font-size: 10pt; border-bottom: 1px solid #e2e8f0; }
+        .mini-table { margin: 0; border: none; }
+        .mini-table th { background: #fff; border-top: none; border-left: none; font-size: 7pt; padding: 4px; }
+        .mini-table td { border-left: none; font-size: 8pt; padding: 4px; }
+        .obs-box { background: #fffbeb; padding: 6px 12px; font-size: 8pt; font-style: italic; border-top: 1px solid #fef3c7; color: #92400e; }
+    </style></head><body onload="window.print()"><div class="pdf-container">`;
+
+    h += getPdfHeader("RELATÓRIO DIÁRIO DE APONTAMENTO", `Data: ${dataFmt} | ${equipeTxt}`);
+    h += `<div class="report-grid">`;
+
+    lista.forEach(f => {
+        const res = localData[f.gsb] || cloudData[f.gsb] || { status:'trabalhou', detalhes:[], obs:"" };
+        const st  = res.status;
+        const lcs = res.detalhes;
+        const obs = res.obs;
+        let statusClass = st==='trabalhou' ? 'status-trabalhou' : (st==='falta' ? 'status-falta' : 'status-atestado');
+
+        h += `<div class="func-block">
+            <div class="func-header">
+                <span>${f.gsb} - ${f.nome}</span>
+                <span class="status-badge ${statusClass}">${st}</span>
+            </div>`;
+
+        if (st === 'trabalhou' && lcs.length > 0) {
+            h += `<table class="mini-table"><thead><tr>
+                <th>Lote/Área</th><th>Serviço</th>
+                <th style="width:35px">Início</th><th style="width:35px">Fim</th><th style="width:40px">Tempo</th>
+            </tr></thead><tbody>`;
+
+            let minTotal = 0;
+            lcs.forEach(l => {
+                let dStr = "-";
+                if (l.inicio && l.fim) {
+                    const [hi,mi] = l.inicio.split(':').map(Number);
+                    const [hf,mf] = l.fim.split(':').map(Number);
+                    let d = (hf*60+mf)-(hi*60+mi);
+                    if (hi<12 && hf>=12) d -= 60;
+                    minTotal += d;
+                    dStr = `${Math.floor(d/60)}h${(d%60).toString().padStart(2,'0')}`;
+                }
+                h += `<tr><td>${l.lote||'-'}/${l.area||'-'}</td><td>${l.servico||'-'}</td><td>${l.inicio||'-'}</td><td>${l.fim||'-'}</td><td>${dStr}</td></tr>`;
+            });
+
+            let limiteDia = getLimiteMinutos(data);
+            let diff = minTotal - limiteDia;
+            let saldoTxt = "";
+            if (diff !== 0 && limiteDia > 0) {
+                let cor    = diff > 0 ? '#10b981' : '#ef4444';
+                let sinal  = diff > 0 ? "+" : "-";
+                let absD   = Math.abs(diff);
+                saldoTxt  = ` <span style="color:${cor}; font-weight:bold;">(Saldo: ${sinal}${Math.floor(absD/60)}h${(absD%60).toString().padStart(2,'0')})</span>`;
+            }
+            let metaTxt = (lcs.length>0 && lcs[0].metaDia) ? `<span style="color:#0891b2; margin-left:10px;">Meta: ${lcs[0].metaDia}%</span>` : "";
+            h += `</tbody></table>
+                <div style="padding:6px 12px; text-align:right; font-size:8pt; background:#f8fafc; border-top:1px solid #e2e8f0;">
+                    <strong>Total: ${Math.floor(minTotal/60)}h${(minTotal%60).toString().padStart(2,'0')}</strong>${saldoTxt}${metaTxt}
+                </div>`;
+        } else if (st !== 'trabalhou') {
+            let limiteDia = getLimiteMinutos(data);
+            let debitoStr = (st === 'falta' && limiteDia > 0)
+                ? ` <span style="color:#ef4444; font-weight:bold;">(DÉBITO: -${Math.floor(limiteDia/60)}h${(limiteDia%60).toString().padStart(2,'0')})</span>`
+                : "";
+            h += `<div style="padding:15px; color:#64748b; font-size:9pt; text-align:center;">Status registrado como ${st.toUpperCase()}${debitoStr}</div>`;
+        }
+
+        if (obs) h += `<div class="obs-box"><strong>Obs:</strong> ${obs}</div>`;
+        h += `</div>`;
+    });
+
+    h += `</div></div></body></html>`;
+    const win = window.open(); win.document.write(h); win.document.close();
+}
+
+// =============================================
+// EXCEL DIÁRIO
+// =============================================
+function gerarExcel() {
+    const data       = document.getElementById('dataApontamento').value;
+    const filtroNome = document.getElementById('filtroEquipe').value;
+    const lista = DB.funcionarios.filter(f => !filtroNome || f.encarregado.trim().toLowerCase().includes(filtroNome.trim().toLowerCase()));
+
+    // FIX 2: cloudData declarado corretamente aqui também
+    let cloudData = {};
+    DB.registros
+        .filter(r => r.dataRef.split('T')[0] === data)
+        .forEach(r => {
+            cloudData[r.gsb] = {
+                status:   r.status.toLowerCase(),
+                detalhes: (typeof r.detalhes==='string' ? JSON.parse(r.detalhes) : r.detalhes) || [],
+                obs:      r.obs || ""
+            };
+        });
+
+    let csv = 'GSB;Nome;Encarregado;Status;Lote;Área;Serviço;Início;Fim;Tempo;Obs\n';
+    lista.forEach(f => {
+        const res = localData[f.gsb] || cloudData[f.gsb] || { status:'trabalhou', detalhes:[], obs:"" };
+        const st  = res.status;
+        const lcs = res.detalhes || [];
+        const obs = (res.obs || "").replace(/\n/g, ' ');
+
+        if (st !== 'trabalhou') {
+            csv += `${f.gsb};${f.nome};${f.encarregado};${st.toUpperCase()};-;-;-;-;-;-;${obs}\n`;
+        } else if (lcs.length > 0) {
+            lcs.forEach(l => {
+                let hrs = '-';
+                if (l.inicio && l.fim) {
+                    const [hi,mi] = l.inicio.split(':').map(Number);
+                    const [hf,mf] = l.fim.split(':').map(Number);
+                    let d = (hf*60+mf)-(hi*60+mi);
+                    if (hi<12 && hf>=12) d -= 60;
+                    hrs = Math.floor(d/60)+'h'+(d%60).toString().padStart(2,'0');
+                }
+                csv += `${f.gsb};${f.nome};${f.encarregado};TRABALHOU;${l.lote||'-'};${l.area||'-'};${l.servico||'-'};${l.inicio||'-'};${l.fim||'-'};${hrs};${obs}\n`;
+            });
+        } else {
+            csv += `${f.gsb};${f.nome};${f.encarregado};SEM DADOS;-;-;-;-;-;-;${obs}\n`;
+        }
+    });
+
+    const blob = new Blob(["\ufeff"+csv], { type:'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = 'Apontamento_'+data+'.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+// =============================================
+// EXCEL PRÊMIO
+// =============================================
+function gerarExcelPremio() {
+    const ini = document.getElementById('relDataInicio').value;
+    const fim = document.getElementById('relDataFim').value;
+    const filtroNome = document.getElementById('filtroEquipe').value;
+    if (!ini || !fim) { alert("⚠️ Selecione as datas de início e fim."); return; }
+
+    let dates = [];
+    let [y1,m1,d1] = ini.split('-').map(Number);
+    let [y2,m2,d2] = fim.split('-').map(Number);
+    let curr = new Date(y1, m1-1, d1);
+    let end  = new Date(y2, m2-1, d2);
+    while (curr <= end) { dates.push(new Date(curr)); curr.setDate(curr.getDate()+1); }
+
+    let mapaRegistros = {};
+    DB.registros.forEach(r => {
+        let d = r.dataRef.split('T')[0];
+        if (d >= ini && d <= fim) mapaRegistros[d+'|'+r.gsb] = r;
+    });
+
+    const lista = DB.funcionarios.filter(f => {
+        const matchEquipe = !filtroNome || f.encarregado.trim().toLowerCase().includes(filtroNome.trim().toLowerCase());
+        if (f.demissao && f.demissao < ini) return false;
+        return matchEquipe;
+    });
+
+    let ganhadores = [];
+    lista.forEach(f => {
+        let perdeu = false, teveAlgum = false;
+        for (let dObj of dates) {
+            let dStr = `${dObj.getFullYear()}-${(dObj.getMonth()+1).toString().padStart(2,'0')}-${dObj.getDate().toString().padStart(2,'0')}`;
+            let r    = mapaRegistros[dStr+'|'+f.gsb];
+            let st   = "";
+            if (r) { st = r.status.toUpperCase(); teveAlgum = true; }
+            else {
+                let vig = verificarAfastamentoVigente(f.gsb, dStr);
+                if (vig) { st = vig.tipo==='FÉRIAS'?'FERIAS':'ATESTADO'; teveAlgum = true; }
+            }
+            if (st === 'FALTA' || st.includes('ATEST')) { perdeu = true; break; }
+        }
+        if (!perdeu && teveAlgum) ganhadores.push(f);
+    });
+
+    ganhadores.sort((a,b) => a.nome.localeCompare(b.nome));
+    if (ganhadores.length === 0) { alert("Ninguém ganhou o prêmio neste período."); return; }
+
+    const dIniFmt = ini.split('-').reverse().join('/');
+    const dFimFmt = fim.split('-').reverse().join('/');
+    let dataEntregaObj = new Date(y2, m2-1, d2+6);
+    const dataEntregaFmt = `${String(dataEntregaObj.getDate()).padStart(2,'0')}/${String(dataEntregaObj.getMonth()+1).padStart(2,'0')}/${dataEntregaObj.getFullYear()}`;
+
+    let metade = Math.ceil(ganhadores.length / 2);
+    let col1 = ganhadores.slice(0, metade);
+    let col2 = ganhadores.slice(metade);
+
+    const cinza  = 'background-color:#D9D9D9';
+    const branco = 'background-color:#FFFFFF';
+    const gsbStyle  = 'border:1px solid black;padding:5px;font-family:Arial;font-size:11pt;font-weight:bold;color:#009900;text-align:center;width:50px;';
+    const nomeStyle = 'border:1px solid black;padding:5px;font-family:Arial;font-size:11pt;text-align:left;min-width:280px;';
+
+    let linhas = col1.map((f1, i) => {
+        let f2 = col2[i] || { gsb:'', nome:'' };
+        let bg = i % 2 === 1 ? cinza : branco;
+        return `<tr>
+            <td style="${gsbStyle};${bg}">${f1.gsb}</td><td style="${nomeStyle};${bg}">${f1.nome.toUpperCase()}</td>
+            <td style="${gsbStyle};${bg}">${f2.gsb}</td><td style="${nomeStyle};${bg}">${f2.nome.toUpperCase()}</td>
+        </tr>`;
+    }).join('');
+
+    let xls = `<html xmlns:x="urn:schemas-microsoft-com:office:excel">
+    <head><meta http-equiv="content-type" content="text/plain; charset=UTF-8"/></head>
+    <body><table style="border-collapse:collapse;font-family:Arial,sans-serif;">
+        <tr><td colspan="4" style="font-weight:bold;text-align:center;font-size:14pt;font-family:Arial;border:none;padding:6px;">PARABÉNS AOS COLABORADORES GANHADORES DA PREMIAÇÃO</td></tr>
+        <tr><td colspan="4" style="font-weight:bold;text-align:center;font-size:13pt;font-family:Arial;border:none;padding:4px;">PERÍODO (${dIniFmt} A ${dFimFmt})</td></tr>
+        <tr><td colspan="4" style="font-weight:bold;text-align:center;font-size:13pt;font-family:Arial;border:none;padding:4px;">ENTREGA ATÉ DIA <span style="color:red;">${dataEntregaFmt}</span></td></tr>
+        <tr><td colspan="4" style="border:none;height:10px;"></td></tr>
+        ${linhas}
+        <tr><td colspan="4" style="border:none;height:16px;"></td></tr>
+        <tr><td colspan="4" style="text-align:center;font-weight:bold;font-size:12pt;font-family:Arial;border:none;padding:4px;">TOTAL DE GANHADORES: ${ganhadores.length}</td></tr>
+    </table></body></html>`;
+
+    const blob = new Blob([xls], { type:'application/vnd.ms-excel' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `Lista_Premio_${filtroNome||'Geral'}.xls`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+// =============================================
+// EXCEL FECHAMENTO PREMIAÇÃO
+// =============================================
+function gerarExcelFechamentoPremio() {
+    const ini = document.getElementById('relDataInicio').value;
+    const fim = document.getElementById('relDataFim').value;
+    const filtroNome = document.getElementById('filtroEquipe').value;
+    if (!ini || !fim) { alert("Selecione o período de fechamento."); return; }
+
+    const meses = ["JAN","FEV","MAR","ABR","MAI","JUN","JUL","AGO","SET","OUT","NOV","DEZ"];
+    let mesIni  = meses[new Date(ini+"T12:00:00").getMonth()];
+    let mesFim  = meses[new Date(fim+"T12:00:00").getMonth()];
+    let tituloPeriodo = `FECHAMENTO PREMIAÇÃO ${mesIni}/${mesFim}`;
+
+    let dates = [];
+    let [y1,m1,d1] = ini.split('-').map(Number);
+    let [y2,m2,d2] = fim.split('-').map(Number);
+    let curr = new Date(y1, m1-1, d1);
+    let end  = new Date(y2, m2-1, d2);
+    while (curr <= end) { dates.push(new Date(curr)); curr.setDate(curr.getDate()+1); }
+
+    let mapaRegistros = {};
+    DB.registros.forEach(r => {
+        let d = r.dataRef.split('T')[0];
+        if (d >= ini && d <= fim) mapaRegistros[d+'|'+r.gsb] = r;
+    });
+
+    const listaFuncionarios = DB.funcionarios.filter(f => {
+        const matchEquipe = !filtroNome || f.encarregado.trim().toLowerCase().includes(filtroNome.trim().toLowerCase());
+        if (f.demissao && f.demissao < ini) return false;
+        return matchEquipe;
+    });
+
+    let ganhadoresData = [];
+    listaFuncionarios.forEach(f => {
+        let perdeu = false, teveLancamento = false;
+        for (let dObj of dates) {
+            let dStr = `${dObj.getFullYear()}-${(dObj.getMonth()+1).toString().padStart(2,'0')}-${dObj.getDate().toString().padStart(2,'0')}`;
+            let r    = mapaRegistros[dStr+'|'+f.gsb];
+            let st   = "";
+            if (r) { st = r.status.toUpperCase(); teveLancamento = true; }
+            else {
+                let vig = verificarAfastamentoVigente(f.gsb, dStr);
+                if (vig) { st = vig.tipo==='FÉRIAS'?'FERIAS':'ATESTADO'; teveLancamento = true; }
+            }
+            if (st === 'FALTA' || st.includes('ATEST')) { perdeu = true; break; }
+        }
+        if (!perdeu && teveLancamento) ganhadoresData.push({ lote:"", gsb:f.gsb, premio:"", nome:f.nome.toUpperCase() });
+    });
+
+    ganhadoresData.sort((a,b) => a.nome.localeCompare(b.nome));
+    if (ganhadoresData.length === 0) { alert("Nenhum ganhador encontrado."); return; }
+
+    let matrizExcel = [
+        ["","",tituloPeriodo],
+        ["","","COLABORADORES"],
+        ["LOTE","GSB","PREMIO","NOME"]
+    ];
+    ganhadoresData.forEach(g => { matrizExcel.push([g.lote, g.gsb, g.premio, g.nome]); });
+
+    const ws = XLSX.utils.aoa_to_sheet(matrizExcel);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Fechamento");
+    ws['!merges'] = [{ s:{r:0,c:2}, e:{r:0,c:3} }, { s:{r:1,c:2}, e:{r:1,c:3} }];
+    ws['!cols']   = [{wch:10},{wch:8},{wch:12},{wch:45}];
+    XLSX.writeFile(wb, `Fechamento_Premio_${mesFim}.xlsx`);
+}
+
+// =============================================
+// 📱 SISTEMA PWA — APP INSTALÁVEL
+// =============================================
+
+let _pwaInstallEvent = null; // Guarda o evento de instalação do navegador
+
+// Captura o evento "beforeinstallprompt" que o navegador dispara
+// quando o site pode ser instalado como PWA
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault(); // Impede o banner automático do navegador (feio)
+    _pwaInstallEvent = e;
+
+    // Só mostra se o usuário não dispensou antes
+    if (!localStorage.getItem('iida_pwa_dispensado')) {
+        // Aguarda 3 segundos após login para não assustar
+        setTimeout(() => {
+            const banner = document.getElementById('pwaInstallBanner');
+            if (banner && sessao) banner.classList.add('show');
+        }, 3000);
+    }
+});
+
+// Quando o app for instalado com sucesso
+window.addEventListener('appinstalled', () => {
+    document.getElementById('pwaInstallBanner').classList.remove('show');
+    mostrarToast('🎉 IIDA instalado como app com sucesso!', 'success', 6000);
+    localStorage.setItem('iida_pwa_instalado', 'sim');
+});
+
+function instalarPWA() {
+    if (!_pwaInstallEvent) {
+        // Fallback para iOS (Safari não suporta beforeinstallprompt)
+        mostrarToast('No iPhone: toque em Compartilhar → "Adicionar à Tela Inicial"', 'info', 8000);
+        return;
+    }
+    _pwaInstallEvent.prompt(); // Mostra o diálogo de instalação nativo
+    _pwaInstallEvent.userChoice.then(result => {
+        if (result.outcome === 'accepted') {
+            mostrarToast('✅ Instalando IIDA...', 'success');
+        }
+        _pwaInstallEvent = null;
+        document.getElementById('pwaInstallBanner').classList.remove('show');
+    });
+}
+
+function dispensarBannerPWA() {
+    document.getElementById('pwaInstallBanner').classList.remove('show');
+    localStorage.setItem('iida_pwa_dispensado', '1');
+}
+
+// Registra o Service Worker (o cérebro do funcionamento offline)
+function registrarServiceWorker() {
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js')
+            .then(reg => {
+                console.log('✅ Service Worker registrado:', reg.scope);
+
+                // Verifica se tem atualização disponível
+                reg.addEventListener('updatefound', () => {
+                    const newWorker = reg.installing;
+                    newWorker.addEventListener('statechange', () => {
+                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            mostrarToast('🔄 Nova versão disponível! Recarregue para atualizar.', 'info', 8000);
+                        }
+                    });
+                });
+            })
+            .catch(err => {
+                // Falha silenciosa — o app ainda funciona, só não tem cache avançado
+                console.warn('Service Worker não registrado:', err);
+            });
+    }
+}
+
+// =============================================
+// 🛡️ SISTEMA DE PROTEÇÃO v57
+// =============================================
+
+// --- ESTADO DA PROTEÇÃO ---
+let _googleOk        = true;
+let _filaEnvio       = JSON.parse(localStorage.getItem('iida_fila_envio') || '[]');
+let _backups         = JSON.parse(localStorage.getItem('iida_backups') || '[]');
+let _ultimoEnvioHoje = localStorage.getItem('iida_ultimo_envio_hoje') || null;
+let _intervaloFila   = null;
+let _intervaloHealth = null;
+let _intervaloPrazo  = null;
+
+// --- 1. MONITOR DE SAÚDE DO GOOGLE ---
+function iniciarMonitorSaude() {
+    testarGoogle(); // Testa imediatamente
+    _intervaloHealth = setInterval(testarGoogle, 60000); // Testa a cada 1 minuto
+}
+
+function testarGoogle() {
+    if (!navigator.onLine) {
+        atualizarStatusGoogle('error', '📡 Sem internet — trabalhando offline');
+        return;
+    }
+    // Faz um ping simples para o Google (com timeout de 8 segundos)
+    const controller = new AbortController();
+    const timeout    = setTimeout(() => controller.abort(), 8000);
+
+    fetch(URL_GOOGLE + '?ping=1', { signal: controller.signal, cache: 'no-store' })
+        .then(res => {
+            clearTimeout(timeout);
+            if (res.ok || res.type === 'opaque') { // opaque = no-cors respondeu
+                _googleOk = true;
+                let filaSize = _filaEnvio.length;
+                if (filaSize > 0) {
+                    atualizarStatusGoogle('warning', `✅ Google OK — ${filaSize} envio(s) na fila`);
+                    document.getElementById('gsBtnReenviar').style.display = 'block';
+                } else {
+                    atualizarStatusGoogle('ok', '✅ Servidor Google conectado');
+                    document.getElementById('gsBtnReenviar').style.display = 'none';
+                    // Esconde depois de 5s se tudo ok
+                    setTimeout(() => {
+                        const el = document.getElementById('googleStatus');
+                        if (el) el.className = '';
+                    }, 5000);
+                }
+            } else {
+                throw new Error('Status ' + res.status);
+            }
+        })
+        .catch(err => {
+            clearTimeout(timeout);
+            _googleOk = false;
+            atualizarStatusGoogle('error', '🔴 Servidor Google indisponível — dados sendo guardados localmente');
+            document.getElementById('gsBtnReenviar').style.display = _filaEnvio.length > 0 ? 'block' : 'none';
+        });
+}
+
+function atualizarStatusGoogle(tipo, mensagem) {
+    const el   = document.getElementById('googleStatus');
+    const dot  = document.getElementById('gsDot');
+    const txt  = document.getElementById('gsStatusText');
+    if (!el) return;
+    el.className  = tipo;
+    dot.className = 'gs-dot ' + tipo;
+    txt.innerText = mensagem;
+}
+
+// --- 2. FILA DE REENVIO AUTOMÁTICO ---
+function salvarFila() {
+    localStorage.setItem('iida_fila_envio', JSON.stringify(_filaEnvio));
+    atualizarUIFila();
+}
+
+function atualizarUIFila() {
+    const count     = _filaEnvio.length;
+    const banner    = document.getElementById('filaBanner');
+    const badge     = document.getElementById('filaBadge');
+    const filaCount = document.getElementById('filaCount');
+
+    if (count > 0) {
+        if (banner)    { banner.style.display = 'block'; }
+        if (filaCount) { filaCount.innerText = count; }
+        if (badge)     { badge.style.display = 'inline'; badge.innerText = count; }
+    } else {
+        if (banner) banner.style.display = 'none';
+        if (badge)  badge.style.display = 'none';
+    }
+}
+
+function adicionarNaFila(pacote, encarregado, data) {
+    // Evita duplicata: remove entrada antiga da mesma equipe/data antes de adicionar
+    _filaEnvio = _filaEnvio.filter(item =>
+        !(item.encarregado === encarregado && item.data === data)
+    );
+    _filaEnvio.push({
+        id:          Date.now(),
+        pacote:      pacote,
+        encarregado: encarregado,
+        data:        data,
+        tentativas:  0,
+        criadoEm:    new Date().toISOString()
+    });
+    salvarFila();
+    mostrarToast(`📦 Salvo na fila de envio (${_filaEnvio.length} pendente${_filaEnvio.length > 1 ? 's' : ''})`, 'warning');
+}
+
+function iniciarProcessamentoFila() {
+    _intervaloFila = setInterval(processarFila, 30000); // Tenta a cada 30 segundos
+}
+
+async function processarFila() {
+    if (_filaEnvio.length === 0) return;
+    if (!navigator.onLine) return;
+
+    const item = _filaEnvio[0]; // Processa um por vez
+    item.tentativas++;
+
+    try {
+        await fetch(URL_GOOGLE, {
+            method: "POST",
+            mode:   "no-cors",
+            body:   JSON.stringify({ type:"APONTAMENTO", tipo:"APONTAMENTO", pacote: item.pacote })
+        });
+
+        // Sucesso! Remove da fila
+        _filaEnvio.shift();
+        salvarFila();
+        salvarBackup(item.pacote, item.encarregado, item.data); // Faz backup do que foi enviado
+        atualizarStatusGoogle('ok', '✅ Fila processada com sucesso');
+        mostrarToast(`✅ Dados de ${item.encarregado} (${item.data}) reenviados!`, 'success');
+
+        if (_filaEnvio.length > 0) {
+            setTimeout(processarFila, 2000); // Processa o próximo após 2s
+        }
+    } catch (err) {
+        atualizarStatusGoogle('warning', `⚠️ Tentativa ${item.tentativas} falhou — próxima em 30s`);
+        if (item.tentativas >= 20) {
+            // Após 20 tentativas (~10 min), avisa o usuário
+            mostrarToast('⚠️ Não conseguiu enviar após várias tentativas. Verifique a conexão.', 'error');
+        }
+    }
+}
+
+async function processarFilaManual() {
+    if (_filaEnvio.length === 0) {
+        mostrarToast('Fila vazia!', 'info');
+        return;
+    }
+    mostrarToast(`Tentando reenviar ${_filaEnvio.length} item(ns)...`, 'info');
+    await processarFila();
+}
+
+// --- 3. SISTEMA DE BACKUP AUTOMÁTICO ---
+function salvarBackup(pacote, encarregado, data) {
+    const snapshot = {
+        id:          Date.now(),
+        encarregado: encarregado,
+        data:        data,
+        registros:   pacote,
+        total:       pacote.length,
+        criadoEm:    new Date().toLocaleString('pt-BR')
+    };
+
+    _backups.unshift(snapshot);          // Adiciona no início (mais recente primeiro)
+    if (_backups.length > 30) _backups.pop(); // Mantém apenas os últimos 30 backups
+
+    localStorage.setItem('iida_backups', JSON.stringify(_backups));
+
+    // Também salva um backup geral do DB completo
+    localStorage.setItem('iida_backup_db_' + data, JSON.stringify({
+        data: data,
+        criadoEm: new Date().toISOString(),
+        db: DB
+    }));
+}
+
+function criarBackupManual() {
+    const equipe = document.getElementById('filtroEquipe').value || 'Geral';
+    const data   = document.getElementById('dataApontamento').value;
+
+    // Monta um snapshot do estado atual da tela
+    let pacoteAtual = [];
+    DB.funcionarios
+        .filter(f => !equipe || f.encarregado.trim().toLowerCase().includes(equipe.trim().toLowerCase()))
+        .forEach(f => {
+            let dados = localData[f.gsb] || DB.registros.find(r => r.gsb == f.gsb && r.dataRef.split('T')[0] == data);
+            if (dados) pacoteAtual.push({ gsb: f.gsb, nome: f.nome, ...dados });
+        });
+
+    salvarBackup(pacoteAtual, equipe, data);
+    mostrarToast(`💾 Backup criado! ${pacoteAtual.length} funcionários salvos.`, 'success');
+    renderListaBackups();
+}
+
+function abrirModalBackup() {
+    renderListaBackups();
+    document.getElementById('modalBackup').classList.add('active');
+}
+
+function renderListaBackups() {
+    const container = document.getElementById('listaBackups');
+    if (!container) return;
+
+    if (_backups.length === 0) {
+        container.innerHTML = "<p style='text-align:center; color:#94a3b8; padding:20px;'>Nenhum backup ainda.<br>Backups são criados automaticamente a cada envio.</p>";
+        return;
+    }
+
+    container.innerHTML = _backups.map(b => `
+        <div class="backup-item">
+            <div>
+                <strong>${b.encarregado} — ${b.data ? b.data.split('-').reverse().join('/') : '?'}</strong><br>
+                <small>${b.criadoEm} • ${b.total} funcionários</small>
+            </div>
+            <button class="btn-baixar" onclick="baixarBackup(${b.id})">⬇ Baixar</button>
+        </div>`).join('');
+}
+
+function baixarBackup(id) {
+    const backup = _backups.find(b => b.id === id);
+    if (!backup) return;
+
+    const json = JSON.stringify(backup, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `backup_iida_${backup.encarregado}_${backup.data || 'geral'}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    mostrarToast('📥 Backup baixado!', 'success');
+}
+
+// --- 4. ALERTA DE PRAZO (avisa se não enviou até 17h) ---
+function iniciarAlertaPrazo() {
+    verificarPrazo();
+    _intervaloPrazo = setInterval(verificarPrazo, 60000); // Verifica a cada minuto
+}
+
+function verificarPrazo() {
+    if (!sessao) return;
+    const isRH = (sessao.cargo === 'rh' || sessao.cargo === 'admin');
+    if (isRH) return; // RH não precisa do alerta
+
+    const agora  = new Date();
+    const hora   = agora.getHours();
+    const data   = document.getElementById('dataApontamento') ? document.getElementById('dataApontamento').value : null;
+    const equipe = document.getElementById('filtroEquipe') ? document.getElementById('filtroEquipe').value : null;
+
+    if (!data || !equipe) return;
+
+    // Só alerta em dias úteis entre 17h e 21h
+    const diaSem = agora.getDay();
+    if (diaSem === 0 || hora < 17 || hora >= 21) {
+        document.getElementById('alertaPrazo').style.display = 'none';
+        return;
+    }
+
+    // Verifica se já enviou hoje
+    const jaEnviou = DB.registros.some(r =>
+        r.dataRef.split('T')[0] === data &&
+        r.encarregado.trim().toLowerCase().includes(equipe.trim().toLowerCase())
+    );
+
+    const alertaEl = document.getElementById('alertaPrazo');
+    const horaEl   = document.getElementById('horaAtual');
+    if (!jaEnviou && alertaEl) {
+        if (horaEl) horaEl.innerText = hora;
+        alertaEl.style.display = 'block';
+    } else if (alertaEl) {
+        alertaEl.style.display = 'none';
+    }
+}
+
+// --- 5. TOAST (notificações visuais no rodapé) ---
+function mostrarToast(mensagem, tipo = 'info', duracao = 4000) {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast ${tipo}`;
+    toast.innerText = mensagem;
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(20px)';
+        toast.style.transition = 'all 0.3s';
+        setTimeout(() => toast.remove(), 300);
+    }, duracao);
+}
+
+// --- INTEGRAÇÃO: ENVIAR DADOS AGORA USA A FILA ---
+// Sobrescreve o enviarDados original para adicionar proteção de fila
+const _enviarDadosOriginal = enviarDados;
+enviarDados = function() {
+    // Se o Google está fora, vai direto para a fila sem tentar
+    if (!_googleOk && navigator.onLine) {
+        const d      = document.getElementById('dataApontamento').value;
+        const filtro = document.getElementById('filtroEquipe').value;
+        if (!confirm("⚠️ O servidor Google está instável. Deseja salvar na fila de reenvio automático?")) return;
+
+        // Monta pacote local para a fila
+        let p = [];
+        const isRH = (sessao.cargo === 'rh' || sessao.cargo === 'admin');
+        DB.funcionarios
+            .filter(f => !filtro || f.encarregado.trim().toLowerCase().includes(filtro.trim().toLowerCase()))
+            .forEach(f => {
+                let dados = localData[f.gsb];
+                if (dados) p.push({
+                    dataRef: d, encarregado: f.encarregado, gsb: f.gsb, nome: f.nome,
+                    status: dados.status.toUpperCase(), detalhes: dados.detalhes || [],
+                    obs: dados.obs || "", validado: isRH ? 'SIM' : 'NAO'
+                });
+            });
+
+        if (p.length === 0) { alert("Nada para salvar."); return; }
+        adicionarNaFila(p, filtro, d);
+        return;
+    }
+    // Google OK → fluxo normal
+    _enviarDadosOriginal();
+};
+
+// --- INTEGRAÇÃO: BACKUP AUTOMÁTICO APÓS ENVIO BEM-SUCEDIDO ---
+// Monkey-patch no fetch para capturar envios com sucesso
+const _fetchOriginal = window.fetch;
+window.fetch = function(...args) {
+    return _fetchOriginal.apply(this, args).then(response => {
+        // Se foi um POST para o Google com dados de apontamento
+        if (args[0] === URL_GOOGLE && args[1] && args[1].method === 'POST') {
+            try {
+                const body = JSON.parse(args[1].body);
+                if (body.tipo === 'APONTAMENTO' && body.pacote && body.pacote.length > 0) {
+                    const equipe = body.pacote[0].encarregado || 'Desconhecido';
+                    const data   = body.pacote[0].dataRef     || '';
+                    salvarBackup(body.pacote, equipe, data);
+
+                    // Marca que enviou hoje
+                    localStorage.setItem('iida_ultimo_envio_hoje', new Date().toISOString());
+                    verificarPrazo(); // Atualiza alerta de prazo
+                }
+            } catch(e) {}
+        }
+        return response;
+    });
+};
+
+// --- INICIALIZAÇÃO DO SISTEMA DE PROTEÇÃO ---
+function iniciarSistemasDeProtecao() {
+    registrarServiceWorker(); // 📱 PWA
+    iniciarMonitorSaude();
+    iniciarProcessamentoFila();
+    iniciarAlertaPrazo();
+    atualizarUIFila();
+}
+
+// Datalist de serviços
+const sL = document.createElement('datalist');
+sL.id = 'srvs';
+SERVICOS.forEach(s => { const o = document.createElement('option'); o.value = s; sL.appendChild(o); });
+document.body.appendChild(sL);
+</script>
+</body>
+</html>

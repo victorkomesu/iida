@@ -1522,78 +1522,77 @@ const LOTES = [
 const AREAS = LOTES.map(l=>({id:l.id, nome:l.nome}));
 
 // ════════════════════════════════════════════════
-// AUTENTICAÇÃO — usuários salvos no Sheets + cache local
+// ════════════════════════════════════════════════
+// AUTH — padrão DB centralizado (igual app apontamentos)
 // ════════════════════════════════════════════════
 let AUTH = { user: null };
 
+// DB central — carregado na inicialização
+const DB = { usuarios: [] };
+
 // ── Cache local ──
-function authLoadUsers() {
+function authLoadCache() {
   try { return JSON.parse(localStorage.getItem('iida_users')) || []; } catch(e){ return []; }
 }
-function authSaveUsers(users) {
+function authSaveCache(users) {
   localStorage.setItem('iida_users', JSON.stringify(users));
 }
 
-// ── Busca lista de usuários do Sheets ──
-async function authFetchUsersFromSheets() {
+// ── Carrega usuários do Sheets na abertura do app ──
+async function carregarDados() {
+  const loginErr = document.getElementById('loginErr');
+  const btn = document.querySelector('.login-btn');
+  if(btn) { btn.textContent = 'Carregando…'; btn.disabled = true; }
+
   try {
     const res = await fetch(SHEETS_URL + '?acao=usuarios');
     const text = await res.text();
-    // Verifica se retornou JSON válido (não página de login do Google)
-    if(!text.trim().startsWith('{')) throw new Error('Resposta não é JSON — verifique permissões do Apps Script');
+    if(!text.trim().startsWith('{')) throw new Error('Resposta inválida');
     const json = JSON.parse(text);
-    if(json.ok && Array.isArray(json.usuarios) && json.usuarios.length) {
-      authSaveUsers(json.usuarios); // atualiza cache local
-      return json.usuarios;
-    }
-    if(json.ok && Array.isArray(json.usuarios) && json.usuarios.length === 0) {
-      // Planilha existe mas sem usuários — mantém cache local
-      const cached = authLoadUsers();
-      if(cached.length) return cached;
+    if(json.ok && Array.isArray(json.usuarios)) {
+      DB.usuarios = json.usuarios;
+      authSaveCache(DB.usuarios); // atualiza cache
+    } else {
+      throw new Error('Sem dados');
     }
   } catch(e) {
-    console.warn('Sheets indisponível:', e.message);
+    console.warn('Sheets offline, usando cache:', e.message);
+    DB.usuarios = authLoadCache();
   }
-  // Fallback: cache local
-  return authLoadUsers();
+
+  if(btn) { btn.textContent = 'Entrar →'; btn.disabled = false; }
 }
 
-// ── Bootstrap: garante admin padrão se não houver ninguém ──
-function authBootstrap() {
-  const users = authLoadUsers();
-  if(!users.length) {
-    const defaultAdmin = [{ username:'admin', fullname:'Administrador', password:'admin123', role:'adm' }];
-    authSaveUsers(defaultAdmin);
-    // Tenta criar no Sheets também
-    syncSend('Usuarios', { acao:'criar', usuario: defaultAdmin[0] });
-  }
-}
-
-// ── Login: tenta Sheets primeiro, usa cache como fallback ──
-async function authLogin() {
+// ── Login — consulta DB.usuarios (já carregado) ──
+function authLogin() {
   const user = document.getElementById('loginUser').value.trim().toLowerCase();
-  const pass = document.getElementById('loginPass').value;
+  const pass = document.getElementById('loginPass').value.trim();
   const err  = document.getElementById('loginErr');
-  const btn  = document.querySelector('.login-btn');
-  if(!user||!pass){ err.textContent='Preencha usuário e senha.'; return; }
+  if(!user || !pass) { err.textContent = 'Preencha usuário e senha.'; return; }
 
-  err.textContent = '';
-  btn.textContent = 'Verificando…'; btn.disabled = true;
-
-  const users = await authFetchUsersFromSheets();
-  btn.textContent = 'Entrar →'; btn.disabled = false;
-
-  if(!users.length) {
-    err.textContent = 'Sem usuários cadastrados. Verifique a conexão ou republique o Apps Script.';
+  if(!DB.usuarios.length) {
+    err.textContent = '⚠️ Dados não carregados. Verifique sua conexão.';
     return;
   }
-  const found = users.find(u=>u.username.toLowerCase()===user && String(u.password)===String(pass));
-  if(!found){ err.textContent='Usuário ou senha incorretos.'; return; }
+
+  const found = DB.usuarios.find(u =>
+    String(u.username).trim().toLowerCase() === user &&
+    String(u.password).trim() === pass
+  );
+
+  if(!found) { err.textContent = 'Usuário ou senha incorretos.'; return; }
+
   AUTH.user = found;
+  authSaveCache(DB.usuarios);
   auditLog('login', 'Login efetuado');
-  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('loginScreen').style.display = 'none';
   authUpdateHub();
   hubInit();
+}
+
+// ── Bootstrap: carrega dados assim que a página abre ──
+async function authBootstrap() {
+  await carregarDados();
 }
 
 function authLogout() {
@@ -1662,7 +1661,7 @@ function admSetRole(role) {
 }
 
 function admRenderUsers() {
-  const users = authLoadUsers();
+  const users = DB.usuarios.length ? DB.usuarios : authLoadCache();
   document.getElementById('admUserCount').textContent = `${users.length} usuário${users.length!==1?'s':''}`;
   const el = document.getElementById('admUserList');
   el.innerHTML = users.map(u=>`
@@ -1685,11 +1684,12 @@ function admCreateUser() {
   const password = document.getElementById('newPassword').value;
   if(!username||!fullname||!password){ showToast('Preencha todos os campos','red'); return; }
   if(password.length<4){ showToast('Senha mínimo 4 caracteres','red'); return; }
-  const users = authLoadUsers();
+  const users = DB.usuarios.length ? DB.usuarios : authLoadCache();
   if(users.find(u=>u.username===username)){ showToast('Usuário já existe','red'); return; }
   const newUser = { username, fullname, password, role:newUserRole };
   users.push(newUser);
-  authSaveUsers(users);
+  DB.usuarios = users;
+  authSaveCache(users);
   syncSend('Usuarios', { acao:'criar', usuario: newUser });
   auditLog('usuario', `Usuário @${username} criado como ${newUserRole==='adm'?'ADM':'Encarregado'}`);
   admRenderUsers();
@@ -1702,10 +1702,12 @@ function admCreateUser() {
 
 function admDeleteUser(username) {
   if(username==='admin'){ showToast('ADM padrão não pode ser removido','red'); return; }
-  const users = authLoadUsers();
+  const users = DB.usuarios.length ? DB.usuarios : authLoadCache();
   const u = users.find(u=>u.username===username);
   if(!confirm(`Remover @${username} (${u?.fullname})?`)) return;
-  authSaveUsers(users.filter(u=>u.username!==username));
+  const updated = users.filter(u=>u.username!==username);
+  DB.usuarios = updated;
+  authSaveCache(updated);
   syncSend('Usuarios', { acao:'deletar', username });
   auditLog('usuario', `Usuário @${username} removido`);
   admRenderUsers();
@@ -1715,7 +1717,7 @@ function admDeleteUser(username) {
 // ─── EDITAR USUÁRIO ───
 let editUserRole = 'enc';
 function admOpenEdit(username) {
-  const u = authLoadUsers().find(u=>u.username===username);
+  const u = (DB.usuarios.length ? DB.usuarios : authLoadCache()).find(u=>u.username===username);
   if(!u) return;
   document.getElementById('editUsername').value  = u.username;
   document.getElementById('editFullname').value  = u.fullname;
@@ -1738,14 +1740,15 @@ function admSaveEdit() {
   const password = document.getElementById('editPassword').value;
   if(!fullname){ showToast('Nome não pode ficar vazio','red'); return; }
   if(password && password.length<4){ showToast('Senha mínimo 4 caracteres','red'); return; }
-  const users = authLoadUsers();
+  const users = DB.usuarios.length ? DB.usuarios : authLoadCache();
   const u = users.find(u=>u.username===username);
   if(!u) return;
   const changes = [];
   if(u.fullname !== fullname){ changes.push(`nome: "${u.fullname}" → "${fullname}"`); u.fullname = fullname; }
   if(password){ changes.push('senha alterada'); u.password = password; }
   if(u.role !== editUserRole){ changes.push(`cargo: ${u.role} → ${editUserRole}`); u.role = editUserRole; }
-  authSaveUsers(users);
+  DB.usuarios = users;
+  authSaveCache(users);
   syncSend('Usuarios', { acao:'editar', usuario: u });
   // Se editou o próprio usuário logado, atualiza sessão
   if(AUTH.user?.username === username) { AUTH.user = u; authUpdateHub(); }
@@ -3996,6 +3999,7 @@ function pwaInstall() {
 // ════════════════════════════════════════════════
 // INICIALIZAÇÃO — após todas as funções definidas
 // ════════════════════════════════════════════════
+// Carrega dados do Sheets e libera o botão de login
 authBootstrap();
 // Tela de login já visível via CSS (display:flex)
 // Hub e app só ficam ativos após authLogin()

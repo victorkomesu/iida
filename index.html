@@ -10,6 +10,28 @@
 <meta name="theme-color" content="#2a6e3f">
 <link rel="manifest" id="pwa-manifest">
 <link rel="apple-touch-icon" id="apple-icon">
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+  import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, setDoc, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDkDafjxGPswq3Tn8SF2GY0jtJY-IZuLb8",
+    authDomain: "grupo-iida.firebaseapp.com",
+    projectId: "grupo-iida",
+    storageBucket: "grupo-iida.firebasestorage.app",
+    messagingSenderId: "972355340019",
+    appId: "1:972355340019:web:58b63389b56f0a30279986"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+
+  // Expõe globalmente para o resto do app
+  window._fb = { db, collection, addDoc, getDocs, deleteDoc, doc, setDoc, query, orderBy };
+  window._fbReady = true;
+  document.dispatchEvent(new Event('fbReady'));
+</script>
 <script>
 // ── Manifest PWA inline ──
 (function() {
@@ -1541,65 +1563,43 @@ function authSaveCache(users) {
 
 // ── Carrega todos os dados do Sheets na abertura ──
 async function carregarDados() {
-  const btn = document.querySelector('.login-btn');
-  if(btn) { btn.textContent = 'Carregando…'; btn.disabled = true; }
-
-  async function fetchAcao(acao) {
-    try {
-      const res = await fetch(SHEETS_URL + '?acao=' + acao);
-      const text = await res.text();
-      if(!text.trim().startsWith('{')) return null;
-      const json = JSON.parse(text);
-      return json.ok ? json : null;
-    } catch(e) { return null; }
+  // Aguarda Firebase estar pronto
+  if (!window._fbReady) {
+    await new Promise(r => document.addEventListener('fbReady', r, { once: true }));
   }
+  try {
+    // Usuarios
+    const usuarios = await fbLoad('campo_usuarios');
+    if (usuarios.length) {
+      DB.usuarios = usuarios;
+      authSaveCache(usuarios);
+    } else {
+      DB.usuarios = authLoadCache();
+    }
 
-  // Carrega usuários
-  const rUsuarios = await fetchAcao('usuarios');
-  if(rUsuarios && Array.isArray(rUsuarios.usuarios) && rUsuarios.usuarios.length) {
-    DB.usuarios = rUsuarios.usuarios;
-    authSaveCache(DB.usuarios);
-  } else {
+    // Parição
+    const paricao = await fbLoad('campo_paricao');
+    if (paricao.length) { pDB = paricao; pPersist(); } else { pLoad(); }
+
+    // Isca
+    const isca = await fbLoad('campo_isca');
+    if (isca.length) { iDB = isca; iPersist(); } else { iLoad(); }
+
+    // Panamá
+    const panama = await fbLoad('campo_panama');
+    if (panama.length) { pmDB = panama; pmPersist(); } else { pmLoad(); }
+
+    // Qualidade
+    const qual = await fbLoad('campo_qualidade');
+    if (qual.length) { qDB = qual; qPersist(); } else { qLoad(); }
+
+    console.log('Firebase carregado — Parição:', pDB.length, 'Isca:', iDB.length, 'Panamá:', pmDB.length, 'Qualidade:', qDB.length);
+  } catch(e) {
+    console.warn('carregarDados erro, usando cache local:', e);
     DB.usuarios = authLoadCache();
+    pLoad(); iLoad(); pmLoad(); qLoad();
   }
-
-  // Carrega registros de cada módulo
-  const rParicao = await fetchAcao('paricao');
-  if(rParicao && Array.isArray(rParicao.registros)) {
-    pDB = rParicao.registros;
-    pPersist();
-  } else {
-    pLoad();
-  }
-
-  const rIsca = await fetchAcao('isca');
-  if(rIsca && Array.isArray(rIsca.registros)) {
-    iDB = rIsca.registros;
-    iPersist();
-  } else {
-    iLoad();
-  }
-
-  const rPanama = await fetchAcao('panama');
-  if(rPanama && Array.isArray(rPanama.registros)) {
-    pmDB = rPanama.registros;
-    pmPersist();
-  } else {
-    pmLoad();
-  }
-
-  const rQual = await fetchAcao('qualidade');
-  if(rQual && Array.isArray(rQual.registros)) {
-    qDB = rQual.registros;
-    qPersist();
-  } else {
-    qLoad();
-  }
-
-  if(btn) { btn.textContent = 'Entrar →'; btn.disabled = false; }
-  console.log('Dados carregados — Parição:', pDB.length, 'Isca:', iDB.length, 'Panamá:', pmDB.length, 'Qualidade:', qDB.length);
 }
-
 // ── Login — consulta DB.usuarios (já carregado) ──
 function authLogin() {
   const user = document.getElementById('loginUser').value.trim().toLowerCase();
@@ -1945,89 +1945,119 @@ function hubInit() {
 }
 
 // ════════════════════════════════════════════════
-// GOOGLE SHEETS — SYNC
+// FIREBASE — SYNC
 // ════════════════════════════════════════════════
-const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxint0sZe9blQeSulnDV_pVJ2GyAi5cJJJe1DeSagBj3xCZb1xvi3ZlTBUS0C2cLo012w/exec';
 
-// Fila de pendentes (salva offline, envia quando tiver conexão)
-function syncGetQueue()       { try{ return JSON.parse(localStorage.getItem('iida_sync_queue')||'[]'); }catch(e){return[];} }
-function syncSaveQueue(q)     { localStorage.setItem('iida_sync_queue', JSON.stringify(q)); }
-function syncGetStatus()      { return localStorage.getItem('iida_sync_status')||'idle'; }
-function syncSetStatus(s)     { localStorage.setItem('iida_sync_status', s); syncUpdateIndicator(); }
+function fbDB() { return window._fb?.db || null; }
 
-function syncUpdateIndicator() {
-  const dot = document.getElementById('syncDot');
-  const lbl = document.getElementById('syncLabel');
-  const btn = document.getElementById('syncBtn');
-  const clr = document.getElementById('syncClearBtn');
-  if(!dot) return;
-  const st = syncGetStatus();
-  if(st==='sending') {
-    dot.className='sync-dot sd-sync'; lbl.textContent='enviando…';
-  } else if(st==='ok') {
-    dot.className='sync-dot sd-on'; lbl.textContent='salvo no Sheets';
-  } else {
-    dot.className='sync-dot sd-on'; lbl.textContent='online';
-  }
-  if(btn) btn.style.display='none';
-  if(clr) clr.style.display='none';
-}
-
-// ── SYNC COM GOOGLE SHEETS ──
-// Apps Script aceita POST com redirect:follow e JSON no body
-// O script lê via e.postData.contents (JSON) OU e.parameter.payload (FormData)
+// Salvar no Firestore — envia direto, sem fila
 async function syncSend(modulo, payload) {
-  const body = { modulo, usuario: AUTH.user?.fullname || '—', ...payload };
+  const db = fbDB();
+  if (!db) { console.warn('Firebase não pronto'); return false; }
+  syncSetStatus('sending');
   try {
-    syncSetStatus('sending');
-    const form = new FormData();
-    form.append('payload', JSON.stringify(body));
-    // no-cors: não retorna resposta legível — assumimos sucesso
-    await fetch(SHEETS_URL, { method: 'POST', body: form, mode: 'no-cors' });
+    const { collection, addDoc } = window._fb;
+    const col = {
+      'Parição':           'campo_paricao',
+      'Isca':              'campo_isca',
+      'Panamá':            'campo_panama',
+      'Qualidade':         'campo_qualidade',
+      'Irrigação':         'campo_irrigacao',
+      'Irrigação_Cadastro':'campo_irrigacao_cadastro',
+      'Auditoria':         'campo_auditoria',
+      'Usuarios':          'campo_usuarios',
+    }[modulo];
+    if (!col) { syncSetStatus('idle'); return false; }
+
+    // Usuarios: upsert por username
+    if (modulo === 'Usuarios') {
+      const { doc, setDoc, deleteDoc } = window._fb;
+      if (payload.acao === 'deletar') {
+        await deleteDoc(doc(db, col, payload.username));
+      } else {
+        const u = payload.usuario;
+        await setDoc(doc(db, col, u.username), u, { merge: true });
+      }
+    } else if (payload.registros) {
+      // múltiplos registros (Parição, Isca, Panamá, Irrigação)
+      for (const r of payload.registros) {
+        await addDoc(collection(db, col), {
+          ...r,
+          _usuario: window.AUTH?.user?.fullname || '—',
+          _ts: Date.now()
+        });
+      }
+    } else {
+      // registro único (Qualidade, Auditoria, Irrigação_Cadastro)
+      await addDoc(collection(db, col), {
+        ...payload,
+        _usuario: window.AUTH?.user?.fullname || '—',
+        _ts: Date.now()
+      });
+    }
+
     syncSetStatus('ok');
     setTimeout(() => syncSetStatus('idle'), 3000);
     return true;
   } catch(err) {
-    console.warn('syncSend erro:', err.message);
+    console.error('syncSend erro:', err);
     syncSetStatus('idle');
-    showToast('⚠️ Erro ao enviar para Sheets.', 'red');
+    showToast('⚠️ Erro ao salvar no Firebase.', 'red');
     return false;
   }
 }
 
-async function syncFlushQueue() {
-  const queue = syncGetQueue();
-  if(!queue.length) { showToast('Nada pendente para sincronizar',''); return; }
-  syncSetStatus('sending');
-  showToast(`Enviando ${queue.length} item(s)...`, '');
-
-  let enviados = 0;
-  for(const item of queue) {
-    try {
-      const form = new FormData();
-      form.append('payload', JSON.stringify(item.payload));
-      await fetch(SHEETS_URL, { method: 'POST', body: form, mode: 'no-cors' });
-      enviados++;
-      // Pequena pausa entre envios para não sobrecarregar o Apps Script
-      await new Promise(r => setTimeout(r, 500));
-    } catch(e) {
-      console.warn('Erro ao enviar item:', e);
-    }
+// Carregar dados do Firestore
+async function fbLoad(colName) {
+  const db = fbDB();
+  if (!db) return [];
+  try {
+    const { collection, getDocs, query, orderBy } = window._fb;
+    const snap = await getDocs(query(collection(db, colName), orderBy('_ts', 'asc')));
+    return snap.docs.map(d => ({ _fid: d.id, ...d.data() }));
+  } catch(e) {
+    console.warn('fbLoad erro', colName, e);
+    return [];
   }
-
-  // no-cors nunca lança exceção — assumimos que enviou tudo
-  syncSaveQueue([]);
-  syncSetStatus('ok');
-  showToast(`✅ ${enviados} item(s) sincronizados!`, 'green');
 }
 
-// Limpa fila de pendentes (usar se travar)
-function syncClearQueue() {
-  if(!confirm('Limpar fila de pendentes? Os dados já salvos localmente não serão perdidos.')) return;
-  syncSaveQueue([]);
-  syncSetStatus('idle');
-  showToast('Fila limpa.', '');
+// Deletar documento do Firestore
+async function fbDel(colName, fid) {
+  const db = fbDB();
+  if (!db || !fid) return;
+  try {
+    const { doc, deleteDoc } = window._fb;
+    await deleteDoc(doc(db, colName, fid));
+  } catch(e) {
+    console.warn('fbDel erro', e);
+  }
 }
+
+function syncGetQueue()   { return []; }
+function syncSaveQueue(q) {}
+function syncGetStatus()  { return localStorage.getItem('iida_sync_status')||'idle'; }
+function syncSetStatus(s) { localStorage.setItem('iida_sync_status', s); syncUpdateIndicator(); }
+
+function syncUpdateIndicator() {
+  const dot = document.getElementById('syncDot');
+  const lbl = document.getElementById('syncLabel');
+  if(!dot) return;
+  const st = syncGetStatus();
+  if(st==='sending') {
+    dot.className='sync-dot sd-sync'; lbl.textContent='salvando…';
+  } else if(st==='ok') {
+    dot.className='sync-dot sd-on'; lbl.textContent='salvo';
+  } else {
+    dot.className='sync-dot sd-on'; lbl.textContent='Firebase';
+  }
+  const btn = document.getElementById('syncBtn');
+  const clr = document.getElementById('syncClearBtn');
+  if(btn) btn.style.display='none';
+  if(clr) clr.style.display='none';
+}
+
+function syncFlushQueue() {}
+function syncClearQueue() {}
 
 // Tenta sincronizar a fila automaticamente quando reconectar
 window.addEventListener('online', ()=>{ if(syncGetQueue().length) syncFlushQueue(); });
@@ -2211,7 +2241,7 @@ function pDel(id) { if(!canDelete()) return;
   if(!confirm('Excluir este registro?')) return;
   const rec = pDB.find(r=>r.id===id);
   auditLog('apagar', `Parição apagada`, `${rec?.loteNome||''} · ${rec?.setorNome||''} · Sem ${rec?.semParicao||''}/${rec?.anoParicao||''}`);
-  pDB=pDB.filter(r=>r.id!==id); pPersist(); pRenderHist(); showToast('Apagado','red');
+  if(rec?._fid) fbDel('campo_paricao',rec._fid); pDB=pDB.filter(r=>r.id!==id); pPersist(); pRenderHist(); showToast('Apagado','red');
 }
 function pExport() {
   if(!pDB.length){showToast('Sem dados');return;}
@@ -2767,7 +2797,7 @@ function iRenderHist() {
     </div>`;
   }).join('');
 }
-function iDel(id){if(!canDelete())return;if(!confirm('Excluir?'))return;const rec=iDB.find(r=>r.id===id);auditLog('apagar',`Isca apagada`,`${rec?.loteNome||''} · ${rec?.setorNome||''} · Sem ${rec?.semana||''}/${rec?.ano||''}`);iDB=iDB.filter(r=>r.id!==id);iPersist();iRenderHist();showToast('Apagado','red');}
+function iDel(id){if(!canDelete())return;if(!confirm('Excluir?'))return;const rec=iDB.find(r=>r.id===id);auditLog('apagar',`Isca apagada`,`${rec?.loteNome||''} · ${rec?.setorNome||''} · Sem ${rec?.semana||''}/${rec?.ano||''}`);const ri=iDB.find(r=>r.id===id); if(ri?._fid) fbDel('campo_isca',ri._fid); iDB=iDB.filter(r=>r.id!==id);iPersist();iRenderHist();showToast('Apagado','red');}
 
 // ════════════════════════════════════════════════
 // ██████  CONTROLE DE PANAMÁ  (v2 — quantidade simples)
@@ -2963,7 +2993,7 @@ function pmRenderHist() {
       </div>
     </div>`).join('');
 }
-function pmDel(id){if(!canDelete())return;if(!confirm('Excluir?'))return;const rec=pmDB.find(r=>r.id===id);auditLog('apagar',`Panamá apagado`,`${rec?.loteNome||''} · ${rec?.setorNome||''} · ${rec?.mesNome||''}/${rec?.ano||''}`);pmDB=pmDB.filter(r=>r.id!==id);pmPersist();pmRenderHist();showToast('Apagado','red');}
+function pmDel(id){if(!canDelete())return;if(!confirm('Excluir?'))return;const rec=pmDB.find(r=>r.id===id);auditLog('apagar',`Panamá apagado`,`${rec?.loteNome||''} · ${rec?.setorNome||''} · ${rec?.mesNome||''}/${rec?.ano||''}`);const rp=pmDB.find(r=>r.id===id); if(rp?._fid) fbDel('campo_panama',rp._fid); pmDB=pmDB.filter(r=>r.id!==id);pmPersist();pmRenderHist();showToast('Apagado','red');}
 
 
 // ════════════════════════════════════════════════
@@ -3281,7 +3311,7 @@ function qDel(id) {
   if(!confirm('Excluir este registro?')) return;
   const rec = qDB.find(r=>r.id===id);
   auditLog('apagar', `Qualidade apagada`, `${rec?.empresa||'—'} · ${rec?.data||''} · ${rec?.medicoes?.length||0} medição(ões)`);
-  qDB=qDB.filter(r=>r.id!==id); qPersist();
+  const rq=qDB.find(r=>r.id===id); if(rq?._fid) fbDel('campo_qualidade',rq._fid); qDB=qDB.filter(r=>r.id!==id); qPersist();
   qRenderDash(); qRenderHist();
   showToast('Apagado','red');
 }

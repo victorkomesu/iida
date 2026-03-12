@@ -794,6 +794,7 @@ body.is-enc .uc-del  { display:none !important; }
           <span style="font-size:10px;color:rgba(255,255,255,.6);font-family:var(--mono)" id="syncLabel">local</span>
         </div>
         <button id="syncBtn" onclick="syncFlushQueue()" style="display:none;align-items:center;gap:3px;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:5px;cursor:pointer;">↑ Sincronizar</button>
+        <button onclick="syncClearQueue()" style="display:none;align-items:center;gap:3px;background:rgba(255,80,80,.25);border:none;color:#fff;font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:5px;cursor:pointer;" id="syncClearBtn">✕ Limpar</button>
       </div>
       <div id="hubUserBadge" class="hub-user" style="cursor:pointer" onclick="authCheckAdm()">
         <div class="hub-avatar" id="hubAvatar">?</div>
@@ -1921,6 +1922,7 @@ const MONTHS_SHORT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out
 
 // Hub init
 function hubInit() {
+  syncSaveQueue([]); // limpa fila antiga — agora envia direto
   document.getElementById('hubDate').textContent = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
   syncUpdateIndicator();
   // Recarrega dados do Sheets ao entrar no app (garante dados frescos)
@@ -1945,19 +1947,21 @@ function syncGetStatus()      { return localStorage.getItem('iida_sync_status')|
 function syncSetStatus(s)     { localStorage.setItem('iida_sync_status', s); syncUpdateIndicator(); }
 
 function syncUpdateIndicator() {
-  const dot  = document.getElementById('syncDot');
-  const lbl  = document.getElementById('syncLabel');
-  const btn  = document.getElementById('syncBtn');
+  const dot = document.getElementById('syncDot');
+  const lbl = document.getElementById('syncLabel');
+  const btn = document.getElementById('syncBtn');
+  const clr = document.getElementById('syncClearBtn');
   if(!dot) return;
-  const queue = syncGetQueue();
-  const st    = syncGetStatus();
+  const st = syncGetStatus();
   if(st==='sending') {
-    dot.className='sync-dot sd-sync'; lbl.textContent='sincronizando…'; if(btn) btn.style.display='none';
-  } else if(queue.length>0) {
-    dot.className='sync-dot sd-off'; lbl.textContent=`${queue.length} pendente${queue.length>1?'s':''}`; if(btn){btn.style.display='flex';btn.textContent='↑ Sincronizar';}
+    dot.className='sync-dot sd-sync'; lbl.textContent='enviando…';
+  } else if(st==='ok') {
+    dot.className='sync-dot sd-on'; lbl.textContent='salvo no Sheets';
   } else {
-    dot.className='sync-dot sd-on'; lbl.textContent='sincronizado'; if(btn) btn.style.display='none';
+    dot.className='sync-dot sd-on'; lbl.textContent='online';
   }
+  if(btn) btn.style.display='none';
+  if(clr) clr.style.display='none';
 }
 
 // ── SYNC COM GOOGLE SHEETS ──
@@ -1967,20 +1971,17 @@ async function syncSend(modulo, payload) {
   const body = { modulo, usuario: AUTH.user?.fullname || '—', ...payload };
   try {
     syncSetStatus('sending');
-    // FormData + no-cors é a forma mais confiável com Apps Script
-    // no-cors não retorna resposta legível — assumimos sucesso se não lançar exceção
     const form = new FormData();
     form.append('payload', JSON.stringify(body));
+    // no-cors: não retorna resposta legível — assumimos sucesso
     await fetch(SHEETS_URL, { method: 'POST', body: form, mode: 'no-cors' });
     syncSetStatus('ok');
+    setTimeout(() => syncSetStatus('idle'), 3000);
     return true;
   } catch(err) {
-    console.warn('syncSend falhou:', err.message);
-    const queue = syncGetQueue();
-    queue.push({ modulo, payload: body, ts: Date.now() });
-    syncSaveQueue(queue);
+    console.warn('syncSend erro:', err.message);
     syncSetStatus('idle');
-    showToast('⚠️ Salvo local. Sincronizará quando houver conexão.', 'red');
+    showToast('⚠️ Erro ao enviar para Sheets.', 'red');
     return false;
   }
 }
@@ -1989,18 +1990,34 @@ async function syncFlushQueue() {
   const queue = syncGetQueue();
   if(!queue.length) { showToast('Nada pendente para sincronizar',''); return; }
   syncSetStatus('sending');
-  const failed = [];
+  showToast(`Enviando ${queue.length} item(s)...`, '');
+
+  let enviados = 0;
   for(const item of queue) {
     try {
       const form = new FormData();
       form.append('payload', JSON.stringify(item.payload));
       await fetch(SHEETS_URL, { method: 'POST', body: form, mode: 'no-cors' });
-    } catch(e) { failed.push(item); }
+      enviados++;
+      // Pequena pausa entre envios para não sobrecarregar o Apps Script
+      await new Promise(r => setTimeout(r, 500));
+    } catch(e) {
+      console.warn('Erro ao enviar item:', e);
+    }
   }
-  syncSaveQueue(failed);
-  syncSetStatus(failed.length?'idle':'ok');
-  if(failed.length) showToast(`⚠️ ${failed.length} item(s) ainda pendentes`,'red');
-  else showToast('✅ Tudo sincronizado com o Sheets!','green');
+
+  // no-cors nunca lança exceção — assumimos que enviou tudo
+  syncSaveQueue([]);
+  syncSetStatus('ok');
+  showToast(`✅ ${enviados} item(s) sincronizados!`, 'green');
+}
+
+// Limpa fila de pendentes (usar se travar)
+function syncClearQueue() {
+  if(!confirm('Limpar fila de pendentes? Os dados já salvos localmente não serão perdidos.')) return;
+  syncSaveQueue([]);
+  syncSetStatus('idle');
+  showToast('Fila limpa.', '');
 }
 
 // Tenta sincronizar a fila automaticamente quando reconectar

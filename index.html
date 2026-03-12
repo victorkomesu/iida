@@ -1570,15 +1570,22 @@ function authLogin() {
   const err  = document.getElementById('loginErr');
   if(!user || !pass) { err.textContent = 'Preencha usuário e senha.'; return; }
 
+  // Se DB vazio, tenta cache local antes de desistir
   if(!DB.usuarios.length) {
-    err.textContent = '⚠️ Dados não carregados. Verifique sua conexão.';
-    return;
+    const cached = authLoadCache();
+    if(cached.length) { DB.usuarios = cached; }
+    else { err.textContent = '⚠️ Dados não carregados. Verifique sua conexão.'; return; }
   }
 
   const found = DB.usuarios.find(u =>
     String(u.username).trim().toLowerCase() === user &&
     String(u.password).trim() === pass
   );
+
+  // Debug temporário — remove depois
+  console.log('Tentando login:', user, pass);
+  console.log('Usuários em DB:', DB.usuarios);
+  console.log('Encontrado:', found);
 
   if(!found) { err.textContent = 'Usuário ou senha incorretos.'; return; }
 
@@ -3932,42 +3939,7 @@ function irrDelSetor(id) {
   showToast('Setor removido','red');
 }
 
-// PWA — SERVICE WORKER + INSTALL BANNER
-// ════════════════════════════════════════════════
-if('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    const swCode = `
-const CACHE = 'campo-iida-v1';
-const ASSETS = ['/'];
-self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
-});
-self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));
-});
-self.addEventListener('fetch', e => {
-  if(e.request.method !== 'GET') return;
-  // Requisições externas (fonts, sheets) vão direto à rede
-  const url = new URL(e.request.url);
-  if(url.origin !== location.origin && !url.href.includes('fonts.googleapis') && !url.href.includes('fonts.gstatic')) return;
-  e.respondWith(
-    fetch(e.request).then(res => {
-      if(res && res.status === 200 && res.type !== 'opaque') {
-        const clone = res.clone();
-        caches.open(CACHE).then(c => c.put(e.request, clone));
-      }
-      return res;
-    }).catch(() => caches.match(e.request))
-  );
-});
-`;
-    const blob = new Blob([swCode], {type:'text/javascript'});
-    const swUrl = URL.createObjectURL(blob);
-    navigator.serviceWorker.register(swUrl)
-      .then(reg => console.log('SW registrado (inline)'))
-      .catch(err => console.warn('SW falhou:', err));
-  });
-}
+// SW desativado — app funciona em modo online
 
 // Banner de instalação (Android)
 let deferredPrompt = null;

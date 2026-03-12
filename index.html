@@ -1523,33 +1523,61 @@ const LOTES = [
 const AREAS = LOTES.map(l=>({id:l.id, nome:l.nome}));
 
 // ════════════════════════════════════════════════
-// AUTENTICAÇÃO
+// AUTENTICAÇÃO — usuários salvos no Sheets + cache local
 // ════════════════════════════════════════════════
-let AUTH = { user: null }; // usuário logado na sessão
+let AUTH = { user: null };
 
+// ── Cache local ──
 function authLoadUsers() {
   try { return JSON.parse(localStorage.getItem('iida_users')) || []; } catch(e){ return []; }
 }
-function authSaveUsers(users) { localStorage.setItem('iida_users', JSON.stringify(users)); }
+function authSaveUsers(users) {
+  localStorage.setItem('iida_users', JSON.stringify(users));
+}
 
+// ── Busca lista de usuários do Sheets (doGet?acao=usuarios) ──
+async function authFetchUsersFromSheets() {
+  try {
+    const res = await fetch(SHEETS_URL + '?acao=usuarios', { mode:'cors' });
+    const json = await res.json();
+    if(json.ok && Array.isArray(json.usuarios) && json.usuarios.length) {
+      authSaveUsers(json.usuarios); // atualiza cache
+      return json.usuarios;
+    }
+  } catch(e) { /* sem conexão — usa cache */ }
+  return authLoadUsers();
+}
+
+// ── Bootstrap: garante admin padrão se não houver ninguém ──
 function authBootstrap() {
-  // Cria ADM padrão se não houver nenhum usuário cadastrado
   const users = authLoadUsers();
   if(!users.length) {
-    authSaveUsers([{ username:'admin', fullname:'Administrador', password:'admin123', role:'adm' }]);
+    const defaultAdmin = [{ username:'admin', fullname:'Administrador', password:'admin123', role:'adm' }];
+    authSaveUsers(defaultAdmin);
+    // Tenta criar no Sheets também
+    syncSend('Usuarios', { acao:'criar', usuario: defaultAdmin[0] });
   }
 }
 
-function authLogin() {
+// ── Login: tenta Sheets primeiro, usa cache como fallback ──
+async function authLogin() {
   const user = document.getElementById('loginUser').value.trim().toLowerCase();
   const pass = document.getElementById('loginPass').value;
   const err  = document.getElementById('loginErr');
+  const btn  = document.querySelector('.login-btn');
   if(!user||!pass){ err.textContent='Preencha usuário e senha.'; return; }
-  const users = authLoadUsers();
+
+  err.textContent = '';
+  btn.textContent = 'Verificando…'; btn.disabled = true;
+
+  // Tenta buscar lista atualizada do Sheets
+  const users = await authFetchUsersFromSheets();
+  btn.textContent = 'Entrar →'; btn.disabled = false;
+
   const found = users.find(u=>u.username.toLowerCase()===user && u.password===pass);
   if(!found){ err.textContent='Usuário ou senha incorretos.'; return; }
   AUTH.user = found;
-  auditLog('login', `Login efetuado`);
+  auditLog('login', 'Login efetuado');
   document.getElementById('loginScreen').style.display='none';
   authUpdateHub();
   hubInit();
@@ -1646,8 +1674,10 @@ function admCreateUser() {
   if(password.length<4){ showToast('Senha mínimo 4 caracteres','red'); return; }
   const users = authLoadUsers();
   if(users.find(u=>u.username===username)){ showToast('Usuário já existe','red'); return; }
-  users.push({ username, fullname, password, role:newUserRole });
+  const newUser = { username, fullname, password, role:newUserRole };
+  users.push(newUser);
   authSaveUsers(users);
+  syncSend('Usuarios', { acao:'criar', usuario: newUser });
   auditLog('usuario', `Usuário @${username} criado como ${newUserRole==='adm'?'ADM':'Encarregado'}`);
   admRenderUsers();
   document.getElementById('newUsername').value='';
@@ -1663,6 +1693,7 @@ function admDeleteUser(username) {
   const u = users.find(u=>u.username===username);
   if(!confirm(`Remover @${username} (${u?.fullname})?`)) return;
   authSaveUsers(users.filter(u=>u.username!==username));
+  syncSend('Usuarios', { acao:'deletar', username });
   auditLog('usuario', `Usuário @${username} removido`);
   admRenderUsers();
   showToast('Usuário removido','red');
@@ -1702,6 +1733,7 @@ function admSaveEdit() {
   if(password){ changes.push('senha alterada'); u.password = password; }
   if(u.role !== editUserRole){ changes.push(`cargo: ${u.role} → ${editUserRole}`); u.role = editUserRole; }
   authSaveUsers(users);
+  syncSend('Usuarios', { acao:'editar', usuario: u });
   // Se editou o próprio usuário logado, atualiza sessão
   if(AUTH.user?.username === username) { AUTH.user = u; authUpdateHub(); }
   auditLog('usuario', `Usuário @${username} editado: ${changes.join(', ')||'sem alterações'}`);

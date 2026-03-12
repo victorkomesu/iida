@@ -1921,6 +1921,15 @@ const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho'
 const MONTHS_SHORT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 
 // Hub init
+function hubUpdateIscaAlert() {
+  // Atualiza badge de alerta de isca no hub se existir
+  const el = document.getElementById('hubIscaAlert');
+  if(!el) return;
+  const inef = iDB.filter(r => r.inef > 0).length;
+  el.style.display = inef > 0 ? 'block' : 'none';
+  el.textContent = inef;
+}
+
 function hubInit() {
   syncSaveQueue([]); // limpa fila antiga — agora envia direto
   document.getElementById('hubDate').textContent = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});

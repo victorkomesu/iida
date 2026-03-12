@@ -1534,16 +1534,27 @@ function authSaveUsers(users) {
   localStorage.setItem('iida_users', JSON.stringify(users));
 }
 
-// ── Busca lista de usuários do Sheets (doGet?acao=usuarios) ──
+// ── Busca lista de usuários do Sheets ──
 async function authFetchUsersFromSheets() {
   try {
-    const res = await fetch(SHEETS_URL + '?acao=usuarios', { mode:'cors' });
-    const json = await res.json();
+    const res = await fetch(SHEETS_URL + '?acao=usuarios');
+    const text = await res.text();
+    // Verifica se retornou JSON válido (não página de login do Google)
+    if(!text.trim().startsWith('{')) throw new Error('Resposta não é JSON — verifique permissões do Apps Script');
+    const json = JSON.parse(text);
     if(json.ok && Array.isArray(json.usuarios) && json.usuarios.length) {
-      authSaveUsers(json.usuarios); // atualiza cache
+      authSaveUsers(json.usuarios); // atualiza cache local
       return json.usuarios;
     }
-  } catch(e) { /* sem conexão — usa cache */ }
+    if(json.ok && Array.isArray(json.usuarios) && json.usuarios.length === 0) {
+      // Planilha existe mas sem usuários — mantém cache local
+      const cached = authLoadUsers();
+      if(cached.length) return cached;
+    }
+  } catch(e) {
+    console.warn('Sheets indisponível:', e.message);
+  }
+  // Fallback: cache local
   return authLoadUsers();
 }
 
@@ -1569,11 +1580,14 @@ async function authLogin() {
   err.textContent = '';
   btn.textContent = 'Verificando…'; btn.disabled = true;
 
-  // Tenta buscar lista atualizada do Sheets
   const users = await authFetchUsersFromSheets();
   btn.textContent = 'Entrar →'; btn.disabled = false;
 
-  const found = users.find(u=>u.username.toLowerCase()===user && u.password===pass);
+  if(!users.length) {
+    err.textContent = 'Sem usuários cadastrados. Verifique a conexão ou republique o Apps Script.';
+    return;
+  }
+  const found = users.find(u=>u.username.toLowerCase()===user && String(u.password)===String(pass));
   if(!found){ err.textContent='Usuário ou senha incorretos.'; return; }
   AUTH.user = found;
   auditLog('login', 'Login efetuado');
@@ -1892,29 +1906,36 @@ function syncUpdateIndicator() {
   }
 }
 
-// Envia payload via no-cors (evita preflight CORS do Apps Script)
-// O Apps Script lê via e.parameter.payload (JSON string)
+// ── SYNC COM GOOGLE SHEETS ──
+// Apps Script aceita POST com redirect:follow e JSON no body
+// O script lê via e.postData.contents (JSON) OU e.parameter.payload (FormData)
 async function syncSend(modulo, payload) {
   const body = { modulo, usuario: AUTH.user?.fullname || '—', ...payload };
   try {
     syncSetStatus('sending');
-    const form = new FormData();
-    form.append('payload', JSON.stringify(body));
-    await fetch(SHEETS_URL, { method:'POST', body: form, mode:'no-cors' });
-    // no-cors não retorna JSON — consideramos sucesso se não lançou exceção
-    syncSetStatus('ok');
-    return true;
+    // Usa fetch com redirect follow — Apps Script redireciona antes de processar
+    const res = await fetch(SHEETS_URL, {
+      method: 'POST',
+      redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain' }, // evita preflight
+      body: JSON.stringify(body)
+    });
+    // Apps Script retorna JSON
+    const text = await res.text();
+    const json = JSON.parse(text);
+    if(json.ok) { syncSetStatus('ok'); return true; }
+    throw new Error(json.error || 'Erro no script');
   } catch(err) {
+    console.warn('syncSend falhou:', err.message);
     const queue = syncGetQueue();
     queue.push({ modulo, payload: body, ts: Date.now() });
     syncSaveQueue(queue);
     syncSetStatus('idle');
-    showToast(`⚠️ Salvo local. Sem conexão — sincronizará depois.`, 'red');
+    showToast('⚠️ Salvo local. Sincronizará quando houver conexão.', 'red');
     return false;
   }
 }
 
-// Tenta enviar tudo que está na fila
 async function syncFlushQueue() {
   const queue = syncGetQueue();
   if(!queue.length) { showToast('Nada pendente para sincronizar',''); return; }
@@ -1922,14 +1943,18 @@ async function syncFlushQueue() {
   const failed = [];
   for(const item of queue) {
     try {
-      const form = new FormData();
-      form.append('payload', JSON.stringify(item.payload));
-      await fetch(SHEETS_URL, { method:'POST', body: form, mode:'no-cors' });
+      const res = await fetch(SHEETS_URL, {
+        method: 'POST', redirect: 'follow',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(item.payload)
+      });
+      const json = JSON.parse(await res.text());
+      if(!json.ok) failed.push(item);
     } catch(e) { failed.push(item); }
   }
   syncSaveQueue(failed);
   syncSetStatus(failed.length?'idle':'ok');
-  if(failed.length) showToast(`⚠️ ${failed.length} item(s) ainda sem conexão`,'red');
+  if(failed.length) showToast(`⚠️ ${failed.length} item(s) ainda pendentes`,'red');
   else showToast('✅ Tudo sincronizado com o Sheets!','green');
 }
 

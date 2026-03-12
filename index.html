@@ -1538,29 +1538,65 @@ function authSaveCache(users) {
   localStorage.setItem('iida_users', JSON.stringify(users));
 }
 
-// ── Carrega usuários do Sheets na abertura do app ──
+// ── Carrega todos os dados do Sheets na abertura ──
 async function carregarDados() {
-  const loginErr = document.getElementById('loginErr');
   const btn = document.querySelector('.login-btn');
   if(btn) { btn.textContent = 'Carregando…'; btn.disabled = true; }
 
-  try {
-    const res = await fetch(SHEETS_URL + '?acao=usuarios');
-    const text = await res.text();
-    if(!text.trim().startsWith('{')) throw new Error('Resposta inválida');
-    const json = JSON.parse(text);
-    if(json.ok && Array.isArray(json.usuarios)) {
-      DB.usuarios = json.usuarios;
-      authSaveCache(DB.usuarios); // atualiza cache
-    } else {
-      throw new Error('Sem dados');
-    }
-  } catch(e) {
-    console.warn('Sheets offline, usando cache:', e.message);
+  async function fetchAcao(acao) {
+    try {
+      const res = await fetch(SHEETS_URL + '?acao=' + acao);
+      const text = await res.text();
+      if(!text.trim().startsWith('{')) return null;
+      const json = JSON.parse(text);
+      return json.ok ? json : null;
+    } catch(e) { return null; }
+  }
+
+  // Carrega usuários
+  const rUsuarios = await fetchAcao('usuarios');
+  if(rUsuarios && Array.isArray(rUsuarios.usuarios) && rUsuarios.usuarios.length) {
+    DB.usuarios = rUsuarios.usuarios;
+    authSaveCache(DB.usuarios);
+  } else {
     DB.usuarios = authLoadCache();
   }
 
+  // Carrega registros de cada módulo
+  const rParicao = await fetchAcao('paricao');
+  if(rParicao && Array.isArray(rParicao.registros)) {
+    pDB = rParicao.registros;
+    pPersist();
+  } else {
+    pLoad();
+  }
+
+  const rIsca = await fetchAcao('isca');
+  if(rIsca && Array.isArray(rIsca.registros)) {
+    iDB = rIsca.registros;
+    iPersist();
+  } else {
+    iLoad();
+  }
+
+  const rPanama = await fetchAcao('panama');
+  if(rPanama && Array.isArray(rPanama.registros)) {
+    pmDB = rPanama.registros;
+    pmPersist();
+  } else {
+    pmLoad();
+  }
+
+  const rQual = await fetchAcao('qualidade');
+  if(rQual && Array.isArray(rQual.registros)) {
+    qDB = rQual.registros;
+    qPersist();
+  } else {
+    qLoad();
+  }
+
   if(btn) { btn.textContent = 'Entrar →'; btn.disabled = false; }
+  console.log('Dados carregados — Parição:', pDB.length, 'Isca:', iDB.length, 'Panamá:', pmDB.length, 'Qualidade:', qDB.length);
 }
 
 // ── Login — consulta DB.usuarios (já carregado) ──
@@ -1887,6 +1923,14 @@ const MONTHS_SHORT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out
 function hubInit() {
   document.getElementById('hubDate').textContent = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
   syncUpdateIndicator();
+  // Recarrega dados do Sheets ao entrar no app (garante dados frescos)
+  carregarDados().then(() => {
+    // Atualiza telas se já estiverem abertas
+    if(typeof pRenderHist === 'function') pRenderHist();
+    if(typeof iRenderHist === 'function') iRenderHist();
+    if(typeof pmRenderHist === 'function') pmRenderHist();
+    if(typeof qRenderHist === 'function') qRenderHist();
+  });
 }
 
 // ════════════════════════════════════════════════
@@ -1923,18 +1967,13 @@ async function syncSend(modulo, payload) {
   const body = { modulo, usuario: AUTH.user?.fullname || '—', ...payload };
   try {
     syncSetStatus('sending');
-    // Usa fetch com redirect follow — Apps Script redireciona antes de processar
-    const res = await fetch(SHEETS_URL, {
-      method: 'POST',
-      redirect: 'follow',
-      headers: { 'Content-Type': 'text/plain' }, // evita preflight
-      body: JSON.stringify(body)
-    });
-    // Apps Script retorna JSON
-    const text = await res.text();
-    const json = JSON.parse(text);
-    if(json.ok) { syncSetStatus('ok'); return true; }
-    throw new Error(json.error || 'Erro no script');
+    // FormData + no-cors é a forma mais confiável com Apps Script
+    // no-cors não retorna resposta legível — assumimos sucesso se não lançar exceção
+    const form = new FormData();
+    form.append('payload', JSON.stringify(body));
+    await fetch(SHEETS_URL, { method: 'POST', body: form, mode: 'no-cors' });
+    syncSetStatus('ok');
+    return true;
   } catch(err) {
     console.warn('syncSend falhou:', err.message);
     const queue = syncGetQueue();
@@ -1953,13 +1992,9 @@ async function syncFlushQueue() {
   const failed = [];
   for(const item of queue) {
     try {
-      const res = await fetch(SHEETS_URL, {
-        method: 'POST', redirect: 'follow',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(item.payload)
-      });
-      const json = JSON.parse(await res.text());
-      if(!json.ok) failed.push(item);
+      const form = new FormData();
+      form.append('payload', JSON.stringify(item.payload));
+      await fetch(SHEETS_URL, { method: 'POST', body: form, mode: 'no-cors' });
     } catch(e) { failed.push(item); }
   }
   syncSaveQueue(failed);
